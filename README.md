@@ -5,13 +5,14 @@ Complete guide for implementing BLE-based CRUD operations for device and registe
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [BLE Connection Setup](#ble-connection-setup)
-3. [Communication Protocol](#communication-protocol)
-4. [CRUD Operations](#crud-operations)
-5. [Complete Configuration Examples](#complete-configuration-examples)
-6. [Implementation Examples](#implementation-examples)
-7. [Error Handling](#error-handling)
-8. [Best Practices](#best-practices)
+2. [System Features](#system-features)
+3. [BLE Connection Setup](#ble-connection-setup)
+4. [Communication Protocol](#communication-protocol)
+5. [CRUD Operations](#crud-operations)
+6. [Complete Configuration Examples](#complete-configuration-examples)
+7. [Implementation Examples](#implementation-examples)
+8. [Error Handling](#error-handling)
+9. [Best Practices](#best-practices)
 
 ## Overview
 
@@ -23,6 +24,63 @@ This BLE CRUD API provides a standardized way to manage Modbus devices and regis
 - **Persistent storage**: Flash-based configuration storage
 - **Real-time responses**: Immediate feedback via BLE notifications
 - **Production-ready**: Error handling, validation, and logging
+
+## System Features
+
+### Hardware Platform
+- **ESP32 Microcontroller**: Dual-core Xtensa LX6 with WiFi and Bluetooth
+- **PSRAM Support**: External PSRAM for large configuration storage
+- **Dual Serial Buses**: Independent RTU communication on two serial ports
+- **Memory Management**: Automatic PSRAM allocation with internal RAM fallback
+
+### Communication Protocols
+- **Modbus TCP**: Ethernet/WiFi-based Modbus communication
+- **Modbus RTU**: Dual serial bus support (Bus 1: GPIO 15/16/39, Bus 2: GPIO 17/18/40)
+- **BLE Service**: Configuration management via Bluetooth Low Energy
+- **MQTT Client**: Real-time data publishing and command subscription
+- **HTTP Client**: RESTful API integration for cloud services
+
+### Network Connectivity
+- **WiFi Manager**: Automatic connection with credential management
+- **Ethernet Support**: Wired network connectivity option
+- **Network Auto-switching**: Seamless failover between WiFi and Ethernet
+- **Static/DHCP IP**: Configurable IP addressing modes
+
+### Data Management
+- **Flash Storage**: Persistent configuration storage in ESP32 flash
+- **JSON Configuration**: Human-readable device and register configurations
+- **Queue Management**: Asynchronous data processing with FreeRTOS queues
+- **Real-time Clock**: NTP synchronization for accurate timestamps
+- **Logging System**: Configurable retention and interval logging
+
+### Modbus Capabilities
+- **Function Codes**: Support for FC1, FC2, FC3, FC4, FC5, FC16
+- **Data Types**: bool, int16, int32, float32, string
+- **Register Types**: Coils, Discrete Inputs, Input Registers, Holding Registers
+- **Multi-device**: Up to 100 devices per gateway (with PSRAM)
+- **Parallel Processing**: Asynchronous RTU bus operations
+- **Error Recovery**: Automatic retry with configurable timeouts
+
+### Configuration Features
+- **Device Management**: Create, read, update, delete Modbus devices
+- **Register Management**: Individual register configuration and monitoring
+- **Server Configuration**: Network, protocol, and logging settings
+- **Summary Views**: Compact device and register overviews
+- **Validation**: Input validation and error reporting
+
+### Real-time Operations
+- **FreeRTOS Tasks**: Multi-threaded operation for concurrent processing
+- **Configurable Refresh Rates**: Per-device and per-register polling intervals
+- **Live Data Streaming**: Real-time data via MQTT or HTTP
+- **Command Processing**: Remote control via MQTT subscriptions
+- **Status Monitoring**: Device health and communication status
+
+### Security & Reliability
+- **Memory Protection**: Safe allocation with cleanup on failures
+- **Error Handling**: Comprehensive error reporting and recovery
+- **Watchdog Support**: System monitoring and automatic recovery
+- **Configuration Backup**: Persistent storage with integrity checks
+- **Input Sanitization**: Validation of all configuration parameters
 
 ## BLE Connection Setup
 
