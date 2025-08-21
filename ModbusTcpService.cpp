@@ -331,7 +331,12 @@ void ModbusTcpService::storeRegisterValue(const String& deviceId, const JsonObje
   JsonObject dataPoint = dataDoc.to<JsonObject>();
   
   RTCManager* rtc = RTCManager::getInstance();
-  dataPoint["time"] = rtc ? rtc->getTimestamp() : millis();
+  if (rtc) {
+    DateTime now = rtc->getCurrentTime();
+    dataPoint["time"] = now.unixtime();
+  } else {
+    dataPoint["time"] = millis();
+  }
   dataPoint["name"] = reg["register_name"].as<String>();
   dataPoint["address"] = reg["address"];
   dataPoint["datatype"] = reg["data_type"].as<String>();
