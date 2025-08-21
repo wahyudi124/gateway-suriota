@@ -37,9 +37,11 @@ private:
   bool processing;
   QueueHandle_t commandQueue;
   TaskHandle_t commandTaskHandle;
+  TaskHandle_t streamTaskHandle;
   
   // FreeRTOS task functions
   static void commandProcessingTask(void* parameter);
+  static void streamingTask(void* parameter);
   
   // Fragment handling
   void receiveFragment(const String& fragment);

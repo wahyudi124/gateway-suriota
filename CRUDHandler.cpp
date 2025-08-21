@@ -2,11 +2,13 @@
 #include "BLEManager.h"
 
 CRUDHandler::CRUDHandler(ConfigManager* config, ServerConfig* serverCfg, LoggingConfig* loggingCfg) 
-  : configManager(config), serverConfig(serverCfg), loggingConfig(loggingCfg) {}
+  : configManager(config), serverConfig(serverCfg), loggingConfig(loggingCfg), streamDeviceId("") {}
 
 void CRUDHandler::handle(BLEManager* manager, const JsonDocument& command) {
   String op = command["op"] | "";
   String type = command["type"] | "";
+  
+  Serial.printf("DEBUG: Command - op: '%s', type: '%s'\n", op.c_str(), type.c_str());
   
   if (op == "read") {
     handleRead(manager, type, command);
@@ -87,6 +89,28 @@ void CRUDHandler::handleRead(BLEManager* manager, const String& type, const Json
       manager->sendResponse(response);
     } else {
       manager->sendError("Failed to get logging config");
+    }
+    
+  } else if (type == "data") {
+    String device = command["device_id"] | "";
+    Serial.printf("DEBUG: Received device_id field: '%s'\n", device.c_str());
+    if (device == "stop") {
+      streamDeviceId = "";
+      Serial.println("Data streaming stopped");
+      DynamicJsonDocument response(128);
+      response["status"] = "ok";
+      response["message"] = "Data streaming stopped";
+      manager->sendResponse(response);
+    } else if (!device.isEmpty()) {
+      streamDeviceId = device;
+      Serial.printf("Data streaming started for device: %s\n", device.c_str());
+      DynamicJsonDocument response(128);
+      response["status"] = "ok";
+      response["message"] = "Data streaming started for device: " + device;
+      manager->sendResponse(response);
+    } else {
+      Serial.println("ERROR: Empty device ID received");
+      manager->sendError("Empty device ID");
     }
     
   } else {

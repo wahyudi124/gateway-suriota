@@ -1,10 +1,11 @@
 #include "BLEManager.h"
 #include "CRUDHandler.h"
+#include "QueueManager.h"
 #include <esp_heap_caps.h>
 #include <new>
 
 BLEManager::BLEManager(const String& name, CRUDHandler* cmdHandler) 
-  : serviceName(name), handler(cmdHandler), processing(false) {
+  : serviceName(name), handler(cmdHandler), processing(false), streamTaskHandle(nullptr) {
   commandBuffer.reserve(COMMAND_BUFFER_SIZE);
   commandQueue = xQueueCreate(20, sizeof(String*));  // Increased queue size
 }
@@ -63,6 +64,17 @@ bool BLEManager::begin() {
     1  // Pin to core 1
   );
   
+  // Create streaming task
+  xTaskCreatePinnedToCore(
+    streamingTask,
+    "BLE_STREAM_TASK",
+    4096,
+    this,
+    1,
+    &streamTaskHandle,
+    1
+  );
+  
   Serial.println("BLE Manager initialized: " + serviceName);
   return true;
 }
@@ -71,6 +83,11 @@ void BLEManager::stop() {
   if (commandTaskHandle) {
     vTaskDelete(commandTaskHandle);
     commandTaskHandle = nullptr;
+  }
+  
+  if (streamTaskHandle) {
+    vTaskDelete(streamTaskHandle);
+    streamTaskHandle = nullptr;
   }
   
   if (pServer) {
@@ -122,6 +139,8 @@ void BLEManager::commandProcessingTask(void* parameter) {
 }
 
 void BLEManager::handleCompleteCommand(const String& command) {
+  Serial.printf("DEBUG: Raw JSON command: %s\n", command.c_str());
+  
   // Allocate JSON document in PSRAM for large commands
   DynamicJsonDocument* doc = (DynamicJsonDocument*)heap_caps_malloc(sizeof(DynamicJsonDocument), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!doc) {
@@ -199,4 +218,33 @@ void BLEManager::sendFragmented(const String& data) {
   // Send end marker
   pResponseChar->setValue("<END>");
   pResponseChar->notify();
+}
+
+void BLEManager::streamingTask(void* parameter) {
+  BLEManager* manager = static_cast<BLEManager*>(parameter);
+  QueueManager* queueMgr = QueueManager::getInstance();
+  
+  Serial.println("BLE Streaming task started");
+  int loopCount = 0;
+  
+  while (true) {
+    if (queueMgr && !queueMgr->isStreamEmpty()) {
+      DynamicJsonDocument dataDoc(512);
+      JsonObject dataPoint = dataDoc.to<JsonObject>();
+      
+      if (queueMgr->dequeueStream(dataPoint)) {
+        Serial.println("Streaming data via BLE");
+        DynamicJsonDocument response(512);
+        response["status"] = "data";
+        response["data"] = dataPoint;
+        manager->sendResponse(response);
+      }
+    } else {
+      loopCount++;
+      if (loopCount % 100 == 0) {
+        Serial.printf("Stream queue empty, loop count: %d\n", loopCount);
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
 }

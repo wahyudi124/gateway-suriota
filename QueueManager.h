@@ -10,8 +10,11 @@ class QueueManager {
 private:
   static QueueManager* instance;
   QueueHandle_t dataQueue;
+  QueueHandle_t streamQueue;
   SemaphoreHandle_t queueMutex;
+  SemaphoreHandle_t streamMutex;
   static const int MAX_QUEUE_SIZE = 100;
+  static const int MAX_STREAM_QUEUE_SIZE = 50;
   
   QueueManager();
 
@@ -27,6 +30,12 @@ public:
   int size();
   void clear();
   void getStats(JsonObject& stats);
+  
+  // Streaming queue methods
+  bool enqueueStream(const JsonObject& dataPoint);
+  bool dequeueStream(JsonObject& dataPoint);
+  bool isStreamEmpty();
+  void clearStream();
   
   ~QueueManager();
 };

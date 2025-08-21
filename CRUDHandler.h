@@ -13,6 +13,7 @@ private:
   ConfigManager* configManager;
   ServerConfig* serverConfig;
   LoggingConfig* loggingConfig;
+  String streamDeviceId;
   
   // Operation handlers
   void handleRead(BLEManager* manager, const String& type, const JsonDocument& command);
@@ -24,6 +25,7 @@ public:
   CRUDHandler(ConfigManager* config, ServerConfig* serverCfg, LoggingConfig* loggingCfg);
   
   void handle(BLEManager* manager, const JsonDocument& command);
+  String getStreamDeviceId() const { return streamDeviceId; }
 };
 
 #endif

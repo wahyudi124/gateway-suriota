@@ -1,5 +1,8 @@
 #include "ModbusTcpService.h"
 #include "QueueManager.h"
+#include "CRUDHandler.h"
+
+extern CRUDHandler* crudHandler;
 
 uint16_t ModbusTcpService::transactionCounter = 1;
 
@@ -336,6 +339,16 @@ void ModbusTcpService::storeRegisterValue(const String& deviceId, const JsonObje
   
   // Add to message queue
   queueMgr->enqueue(dataPoint);
+  
+  // Check if this device is being streamed
+  String streamId = crudHandler ? crudHandler->getStreamDeviceId() : "";
+  Serial.printf("TCP: Device %s, StreamID '%s', Match: %s\n", 
+                deviceId.c_str(), streamId.c_str(), 
+                (streamId == deviceId) ? "YES" : "NO");
+  if (!streamId.isEmpty() && streamId == deviceId) {
+    Serial.printf("Streaming data for device %s\n", deviceId.c_str());
+    queueMgr->enqueueStream(dataPoint);
+  }
 }
 
 void ModbusTcpService::getStatus(JsonObject& status) {

@@ -3,7 +3,7 @@
 
 QueueManager* QueueManager::instance = nullptr;
 
-QueueManager::QueueManager() : dataQueue(nullptr), queueMutex(nullptr) {}
+QueueManager::QueueManager() : dataQueue(nullptr), streamQueue(nullptr), queueMutex(nullptr), streamMutex(nullptr) {}
 
 QueueManager* QueueManager::getInstance() {
   if (instance == nullptr) {
@@ -24,6 +24,20 @@ bool QueueManager::init() {
   queueMutex = xSemaphoreCreateMutex();
   if (queueMutex == nullptr) {
     Serial.println("Failed to create queue mutex");
+    return false;
+  }
+  
+  // Create streaming queue
+  streamQueue = xQueueCreate(MAX_STREAM_QUEUE_SIZE, sizeof(char*));
+  if (streamQueue == nullptr) {
+    Serial.println("Failed to create stream queue");
+    return false;
+  }
+  
+  // Create streaming mutex
+  streamMutex = xSemaphoreCreateMutex();
+  if (streamMutex == nullptr) {
+    Serial.println("Failed to create stream mutex");
     return false;
   }
   
@@ -186,12 +200,112 @@ void QueueManager::getStats(JsonObject& stats) {
   stats["is_full"] = isFull();
 }
 
+bool QueueManager::enqueueStream(const JsonObject& dataPoint) {
+  if (streamQueue == nullptr || streamMutex == nullptr) {
+    return false;
+  }
+  
+  if (xSemaphoreTake(streamMutex, pdMS_TO_TICKS(10)) != pdTRUE) {
+    return false;
+  }
+  
+  // Remove oldest if full
+  if (uxQueueMessagesWaiting(streamQueue) >= MAX_STREAM_QUEUE_SIZE) {
+    char* oldItem;
+    if (xQueueReceive(streamQueue, &oldItem, 0) == pdTRUE) {
+      free(oldItem);
+    }
+  }
+  
+  String jsonString;
+  serializeJson(dataPoint, jsonString);
+  
+  char* jsonCopy = (char*)heap_caps_malloc(jsonString.length() + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (jsonCopy == nullptr) {
+    jsonCopy = (char*)malloc(jsonString.length() + 1);
+    if (jsonCopy == nullptr) {
+      xSemaphoreGive(streamMutex);
+      return false;
+    }
+  }
+  
+  strcpy(jsonCopy, jsonString.c_str());
+  bool success = xQueueSend(streamQueue, &jsonCopy, 0) == pdTRUE;
+  
+  if (success) {
+    Serial.printf("Stream queue: Added data, size now: %d\n", uxQueueMessagesWaiting(streamQueue));
+  } else {
+    Serial.println("Stream queue: Failed to add data");
+    heap_caps_free(jsonCopy);
+  }
+  
+  xSemaphoreGive(streamMutex);
+  return success;
+}
+
+bool QueueManager::dequeueStream(JsonObject& dataPoint) {
+  if (streamQueue == nullptr || streamMutex == nullptr) {
+    return false;
+  }
+  
+  if (xSemaphoreTake(streamMutex, pdMS_TO_TICKS(10)) != pdTRUE) {
+    return false;
+  }
+  
+  char* jsonString;
+  bool success = false;
+  
+  if (xQueueReceive(streamQueue, &jsonString, 0) == pdTRUE) {
+    Serial.printf("Stream queue: Dequeued data, size now: %d\n", uxQueueMessagesWaiting(streamQueue));
+    DynamicJsonDocument doc(512);
+    if (deserializeJson(doc, jsonString) == DeserializationError::Ok) {
+      JsonObject obj = doc.as<JsonObject>();
+      for (JsonPair kv : obj) {
+        dataPoint[kv.key()] = kv.value();
+      }
+      success = true;
+    }
+    heap_caps_free(jsonString);
+  }
+  
+  xSemaphoreGive(streamMutex);
+  return success;
+}
+
+bool QueueManager::isStreamEmpty() {
+  return streamQueue == nullptr || uxQueueMessagesWaiting(streamQueue) == 0;
+}
+
+void QueueManager::clearStream() {
+  if (streamQueue == nullptr || streamMutex == nullptr) {
+    return;
+  }
+  
+  if (xSemaphoreTake(streamMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+    return;
+  }
+  
+  char* jsonString;
+  while (xQueueReceive(streamQueue, &jsonString, 0) == pdTRUE) {
+    heap_caps_free(jsonString);
+  }
+  
+  xSemaphoreGive(streamMutex);
+}
+
 QueueManager::~QueueManager() {
   clear();
+  clearStream();
   if (dataQueue) {
     vQueueDelete(dataQueue);
   }
+  if (streamQueue) {
+    vQueueDelete(streamQueue);
+  }
   if (queueMutex) {
     vSemaphoreDelete(queueMutex);
+  }
+  if (streamMutex) {
+    vSemaphoreDelete(streamMutex);
   }
 }
