@@ -1,6 +1,7 @@
 #include "ModbusRtuService.h"
 #include "QueueManager.h"
 #include "CRUDHandler.h"
+#include "RTCManager.h"
 
 extern CRUDHandler* crudHandler;
 
@@ -223,7 +224,8 @@ void ModbusRtuService::storeRegisterValue(const String& deviceId, const JsonObje
   DynamicJsonDocument dataDoc(256);
   JsonObject dataPoint = dataDoc.to<JsonObject>();
   
-  dataPoint["time"] = millis();
+  RTCManager* rtc = RTCManager::getInstance();
+  dataPoint["time"] = rtc ? rtc->getTimestamp() : millis();
   dataPoint["name"] = reg["register_name"].as<String>();
   dataPoint["address"] = reg["address"];
   dataPoint["datatype"] = reg["data_type"].as<String>();
