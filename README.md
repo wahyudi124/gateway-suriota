@@ -5,14 +5,15 @@ Complete guide for implementing BLE-based CRUD operations for device and registe
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [System Features](#system-features)
-3. [BLE Connection Setup](#ble-connection-setup)
-4. [Communication Protocol](#communication-protocol)
-5. [CRUD Operations](#crud-operations)
-6. [Complete Configuration Examples](#complete-configuration-examples)
-7. [Implementation Examples](#implementation-examples)
-8. [Error Handling](#error-handling)
-9. [Best Practices](#best-practices)
+2. [Required Libraries](#required-libraries)
+3. [System Features](#system-features)
+4. [BLE Connection Setup](#ble-connection-setup)
+5. [Communication Protocol](#communication-protocol)
+6. [CRUD Operations](#crud-operations)
+7. [Complete Configuration Examples](#complete-configuration-examples)
+8. [Implementation Examples](#implementation-examples)
+9. [Error Handling](#error-handling)
+10. [Best Practices](#best-practices)
 
 ## Overview
 
@@ -24,6 +25,50 @@ This BLE CRUD API provides a standardized way to manage Modbus devices and regis
 - **Persistent storage**: Flash-based configuration storage
 - **Real-time responses**: Immediate feedback via BLE notifications
 - **Production-ready**: Error handling, validation, and logging
+
+## Required Libraries
+
+### Arduino IDE Libraries
+Install these libraries through Arduino IDE Library Manager:
+
+#### Core Libraries
+- **ESP32 Arduino Core** (v2.0.0+) - ESP32 board support
+- **ArduinoJson** (v6.21.0+) - JSON parsing and serialization
+- **SPIFFS** (Built-in) - Flash file system for configuration storage
+
+#### BLE Libraries
+- **ESP32 BLE Arduino** (Built-in) - Bluetooth Low Energy support
+
+#### Network Libraries
+- **WiFi** (Built-in) - WiFi connectivity
+- **Ethernet** (v2.0.0+) - Ethernet W5500 support
+- **PubSubClient** (v2.8.0+) - MQTT client library
+- **HTTPClient** (Built-in) - HTTP client for REST APIs
+
+#### Modbus Libraries
+- **ModbusMaster** (v2.0.1+) - Modbus RTU master library
+- **HardwareSerial** (Built-in) - Serial communication for RTU
+
+#### Time Libraries
+- **NTPClient** (v3.2.1+) - Network Time Protocol client
+- **Time** (v1.6.1+) - Time management utilities
+
+### Installation Commands
+```bash
+# Using Arduino CLI
+arduino-cli lib install "ArduinoJson@6.21.0"
+arduino-cli lib install "PubSubClient@2.8.0"
+arduino-cli lib install "ModbusMaster@2.0.1"
+arduino-cli lib install "NTPClient@3.2.1"
+arduino-cli lib install "Time@1.6.1"
+arduino-cli lib install "Ethernet@2.0.0"
+```
+
+### Hardware Requirements
+- **ESP32 Development Board** (with PSRAM recommended)
+- **W5500 Ethernet Module** (for Ethernet connectivity)
+- **RS485 Modules** (for Modbus RTU communication)
+- **External PSRAM** (optional, for large configurations)
 
 ## System Features
 
