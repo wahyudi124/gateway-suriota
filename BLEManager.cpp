@@ -102,6 +102,18 @@ void BLEManager::onConnect(BLEServer* pServer) {
 
 void BLEManager::onDisconnect(BLEServer* pServer) {
   Serial.println("BLE Client disconnected");
+  
+  // Stop streaming when client disconnects
+  extern CRUDHandler* crudHandler;
+  if (crudHandler) {
+    crudHandler->clearStreamDeviceId();
+    QueueManager* queueMgr = QueueManager::getInstance();
+    if (queueMgr) {
+      queueMgr->clearStream();
+    }
+    Serial.println("Cleared streaming on disconnect");
+  }
+  
   BLEDevice::startAdvertising(); // Restart advertising
 }
 

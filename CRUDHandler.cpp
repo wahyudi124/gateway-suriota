@@ -1,5 +1,6 @@
 #include "CRUDHandler.h"
 #include "BLEManager.h"
+#include "QueueManager.h"
 
 CRUDHandler::CRUDHandler(ConfigManager* config, ServerConfig* serverCfg, LoggingConfig* loggingCfg) 
   : configManager(config), serverConfig(serverCfg), loggingConfig(loggingCfg), streamDeviceId("") {}
@@ -97,6 +98,10 @@ void CRUDHandler::handleRead(BLEManager* manager, const String& type, const Json
     if (device == "stop") {
       streamDeviceId = "";
       Serial.println("Data streaming stopped");
+      QueueManager* queueMgr = QueueManager::getInstance();
+      if (queueMgr) {
+        queueMgr->clearStream();
+      }
       DynamicJsonDocument response(128);
       response["status"] = "ok";
       response["message"] = "Data streaming stopped";
