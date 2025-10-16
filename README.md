@@ -314,7 +314,38 @@ All responses follow this JSON format:
 }
 ```
 
-#### 5. Delete Device
+#### 5. Update Device
+
+**Purpose**: Update existing device configuration
+
+**Request**:
+```json
+{
+  "op": "update",
+  "type": "device",
+  "device_id": "D7F2A9B",
+  "config": {
+    "device_name": "Updated Production Gateway",
+    "protocol": "Modbus TCP",
+    "ip": "192.168.1.200",
+    "port": 502,
+    "slave_id": 2,
+    "timeout": 2000,
+    "retry_count": 5,
+    "refresh_rate_ms": 500
+  }
+}
+```
+
+**Response**:
+```json
+{
+  "status": "ok",
+  "message": "Device updated"
+}
+```
+
+#### 6. Delete Device
 
 **Purpose**: Remove device and all its registers
 
@@ -445,7 +476,38 @@ All responses follow this JSON format:
 }
 ```
 
-#### 4. Delete Register
+#### 4. Update Register
+
+**Purpose**: Update existing register configuration
+
+**Request**:
+```json
+{
+  "op": "update",
+  "type": "register",
+  "device_id": "D7F2A9B",
+  "register_id": "R8C3F2A",
+  "config": {
+    "address": 40001,
+    "register_name": "UPDATED_TEMP_SENSOR",
+    "type": "Holding Register",
+    "function_code": 3,
+    "data_type": "int16",
+    "description": "Updated Temperature Sensor (°C)",
+    "refresh_rate_ms": 2000
+  }
+}
+```
+
+**Response**:
+```json
+{
+  "status": "ok",
+  "message": "Register updated"
+}
+```
+
+#### 5. Delete Register
 
 **Purpose**: Remove a specific register from a device
 

@@ -33,6 +33,7 @@ public:
   // Device operations
   String createDevice(JsonObjectConst config);
   bool readDevice(const String& deviceId, JsonObject& result);
+  bool updateDevice(const String& deviceId, JsonObjectConst config);
   bool deleteDevice(const String& deviceId);
   void listDevices(JsonArray& devices);
   void getDevicesSummary(JsonArray& summary);
@@ -47,6 +48,7 @@ public:
   String createRegister(const String& deviceId, JsonObjectConst config);
   bool listRegisters(const String& deviceId, JsonArray& registers);
   bool getRegistersSummary(const String& deviceId, JsonArray& summary);
+  bool updateRegister(const String& deviceId, const String& registerId, JsonObjectConst config);
   bool deleteRegister(const String& deviceId, const String& registerId);
 };
 

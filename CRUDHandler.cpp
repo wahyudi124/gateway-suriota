@@ -155,7 +155,32 @@ void CRUDHandler::handleCreate(BLEManager* manager, const String& type, const Js
 }
 
 void CRUDHandler::handleUpdate(BLEManager* manager, const String& type, const JsonDocument& command) {
-  if (type == "server_config") {
+  if (type == "device") {
+    String deviceId = command["device_id"] | "";
+    JsonObjectConst config = command["config"];
+    if (configManager->updateDevice(deviceId, config)) {
+      DynamicJsonDocument response(128);
+      response["status"] = "ok";
+      response["message"] = "Device updated";
+      manager->sendResponse(response);
+    } else {
+      manager->sendError("Device update failed");
+    }
+    
+  } else if (type == "register") {
+    String deviceId = command["device_id"] | "";
+    String registerId = command["register_id"] | "";
+    JsonObjectConst config = command["config"];
+    if (configManager->updateRegister(deviceId, registerId, config)) {
+      DynamicJsonDocument response(128);
+      response["status"] = "ok";
+      response["message"] = "Register updated";
+      manager->sendResponse(response);
+    } else {
+      manager->sendError("Register update failed");
+    }
+    
+  } else if (type == "server_config") {
     JsonObjectConst config = command["config"];
     if (serverConfig->updateConfig(config)) {
       DynamicJsonDocument response(128);

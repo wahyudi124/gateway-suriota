@@ -141,6 +141,40 @@ bool ConfigManager::readDevice(const String& deviceId, JsonObject& result) {
   return false;
 }
 
+bool ConfigManager::updateDevice(const String& deviceId, JsonObjectConst config) {
+  if (!loadDevicesCache()) return false;
+  
+  if (!devicesCache->containsKey(deviceId)) {
+    Serial.printf("Device %s not found for update\n", deviceId.c_str());
+    return false;
+  }
+  
+  JsonObject device = (*devicesCache)[deviceId];
+  
+  // Update device configuration while preserving device_id and registers
+  JsonArray existingRegisters = device["registers"];
+  
+  // Update all config fields
+  for (JsonPairConst kv : config) {
+    device[kv.key()] = kv.value();
+  }
+  
+  // Ensure device_id and registers are preserved
+  device["device_id"] = deviceId;
+  if (!device.containsKey("registers")) {
+    device["registers"] = existingRegisters;
+  }
+  
+  // Save to file and keep cache valid
+  if (saveJson(DEVICES_FILE, *devicesCache)) {
+    Serial.printf("Device %s updated successfully\n", deviceId.c_str());
+    return true;
+  }
+  
+  invalidateDevicesCache();
+  return false;
+}
+
 bool ConfigManager::deleteDevice(const String& deviceId) {
   if (!loadDevicesCache()) return false;
   
@@ -257,6 +291,45 @@ bool ConfigManager::getRegistersSummary(const String& deviceId, JsonArray& summa
     }
     return true;
   }
+  return false;
+}
+
+bool ConfigManager::updateRegister(const String& deviceId, const String& registerId, JsonObjectConst config) {
+  if (!loadDevicesCache()) return false;
+  
+  if (!devicesCache->containsKey(deviceId)) {
+    Serial.printf("Device %s not found for register update\n", deviceId.c_str());
+    return false;
+  }
+  
+  JsonObject device = (*devicesCache)[deviceId];
+  if (!device.containsKey("registers")) {
+    Serial.printf("No registers found for device %s\n", deviceId.c_str());
+    return false;
+  }
+  
+  JsonArray registers = device["registers"];
+  for (JsonVariant regVar : registers) {
+    JsonObject reg = regVar.as<JsonObject>();
+    if (reg["register_id"] == registerId) {
+      // Update register configuration while preserving register_id
+      for (JsonPairConst kv : config) {
+        reg[kv.key()] = kv.value();
+      }
+      reg["register_id"] = registerId; // Ensure register_id is preserved
+      
+      // Save to file and keep cache valid
+      if (saveJson(DEVICES_FILE, *devicesCache)) {
+        Serial.printf("Register %s updated successfully\n", registerId.c_str());
+        return true;
+      }
+      
+      invalidateDevicesCache();
+      return false;
+    }
+  }
+  
+  Serial.printf("Register %s not found in device %s\n", registerId.c_str(), deviceId.c_str());
   return false;
 }
 

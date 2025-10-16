@@ -82,7 +82,7 @@ void setup() {
   }
   
   // Clear all existing configurations for fresh start
-  configManager->clearAllConfigurations();
+  // configManager->clearAllConfigurations();
   
   // Initialize queue manager
   queueManager = QueueManager::getInstance();
