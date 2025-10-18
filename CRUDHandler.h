@@ -27,6 +27,7 @@ public:
   void handle(BLEManager* manager, const JsonDocument& command);
   String getStreamDeviceId() const { return streamDeviceId; }
   void clearStreamDeviceId() { streamDeviceId = ""; }
+  bool isStreaming() const { return !streamDeviceId.isEmpty(); }
 };
 
 #endif

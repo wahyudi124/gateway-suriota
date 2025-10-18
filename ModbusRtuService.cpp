@@ -96,6 +96,14 @@ void ModbusRtuService::readRtuDevicesLoop() {
       
       String deviceId = deviceVar.as<String>();
       
+      // Debug: Check device ID validity
+      if (deviceId.isEmpty() || deviceId == "{}" || deviceId.length() < 3) {
+        Serial.printf("[RTU] Invalid device ID: '%s' (length: %d)\n", deviceId.c_str(), deviceId.length());
+        continue;
+      }
+      
+      Serial.printf("[RTU] Processing device: '%s'\n", deviceId.c_str());
+      
       DynamicJsonDocument deviceDoc(2048);
       JsonObject deviceObj = deviceDoc.to<JsonObject>();
       if (configManager->readDevice(deviceId, deviceObj)) {
@@ -238,17 +246,34 @@ void ModbusRtuService::storeRegisterValue(const String& deviceId, const JsonObje
   dataPoint["device_id"] = deviceId;
   dataPoint["register_id"] = reg["register_id"].as<String>();
   
+  Serial.printf("Data queued: %s\n", dataPoint["name"].as<String>().c_str());
+  
   // Add to message queue
-  queueMgr->enqueue(dataPoint);
+  if (queueMgr) {
+    queueMgr->enqueue(dataPoint);
+  }
   
   // Check if this device is being streamed
-  String streamId = crudHandler ? crudHandler->getStreamDeviceId() : "";
-  Serial.printf("RTU: Device %s, StreamID '%s', Match: %s\n", 
-                deviceId.c_str(), streamId.c_str(), 
+  String streamId = "";
+  bool crudHandlerAvailable = (crudHandler != nullptr);
+  
+  if (crudHandler) {
+    streamId = crudHandler->getStreamDeviceId();
+  }
+  
+  Serial.printf("RTU: Device %s, CRUDHandler: %s, StreamID '%s', Match: %s\n", 
+                deviceId.c_str(), 
+                crudHandlerAvailable ? "OK" : "NULL",
+                streamId.c_str(), 
                 (streamId == deviceId) ? "YES" : "NO");
-  if (!streamId.isEmpty() && streamId == deviceId) {
-    Serial.printf("Streaming data for device %s\n", deviceId.c_str());
+                
+  if (!streamId.isEmpty() && streamId == deviceId && queueMgr) {
+    Serial.printf("[RTU] Streaming data for device %s to BLE\n", deviceId.c_str());
     queueMgr->enqueueStream(dataPoint);
+  } else if (!streamId.isEmpty() && streamId != deviceId) {
+    Serial.printf("[RTU] Device %s not streaming (StreamID: %s)\n", deviceId.c_str(), streamId.c_str());
+  } else if (streamId.isEmpty()) {
+    Serial.printf("[RTU] No streaming active (StreamID empty)\n");
   }
 }
 

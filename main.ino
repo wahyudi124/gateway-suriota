@@ -83,8 +83,22 @@ void setup() {
     return;
   }
   
-  // Clear all existing configurations for fresh start
+  // Debug: Show devices file content
+  configManager->debugDevicesFile();
+  
+  // Fix corrupt device IDs by recreating clean file
+  configManager->fixCorruptDeviceIds();
+  
+  // Force clear all cache and reload
   configManager->clearAllConfigurations();
+  
+  // Create test device if no valid devices exist
+  configManager->createTestDeviceIfEmpty();
+  
+  Serial.println("[MAIN] Configuration cleanup completed.");
+  
+  // Clear all existing configurations for fresh start
+  //configManager->clearAllConfigurations(); // Commented out to preserve existing devices
   
   // Initialize queue manager
   queueManager = QueueManager::getInstance();
@@ -145,7 +159,21 @@ void setup() {
     }
   }
   
-  // Initialize Modbus RTU service
+  // Initialize CRUD handler in PSRAM FIRST (before Modbus services)
+  crudHandler = (CRUDHandler*)heap_caps_malloc(sizeof(CRUDHandler), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (crudHandler) {
+    new(crudHandler) CRUDHandler(configManager, serverConfig, loggingConfig);
+  } else {
+    crudHandler = new CRUDHandler(configManager, serverConfig, loggingConfig); // Fallback to internal RAM
+    if (!crudHandler) {
+      Serial.println("Failed to allocate CRUDHandler");
+      cleanup();
+      return;
+    }
+  }
+  Serial.println("CRUDHandler initialized");
+  
+  // Initialize Modbus RTU service (after CRUDHandler)
   modbusRtuService = new ModbusRtuService(configManager);
   if (modbusRtuService && modbusRtuService->init()) {
     modbusRtuService->start();
@@ -184,18 +212,7 @@ void setup() {
     Serial.println("Failed to initialize HTTP Manager");
   }
   
-  // Initialize CRUD handler in PSRAM
-  crudHandler = (CRUDHandler*)heap_caps_malloc(sizeof(CRUDHandler), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  if (crudHandler) {
-    new(crudHandler) CRUDHandler(configManager, serverConfig, loggingConfig);
-  } else {
-    crudHandler = new CRUDHandler(configManager, serverConfig, loggingConfig); // Fallback to internal RAM
-    if (!crudHandler) {
-      Serial.println("Failed to allocate CRUDHandler");
-      cleanup();
-      return;
-    }
-  }
+  // CRUDHandler already initialized above
   
   // Initialize BLE manager in PSRAM
   bleManager = (BLEManager*)heap_caps_malloc(sizeof(BLEManager), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

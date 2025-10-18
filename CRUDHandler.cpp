@@ -108,7 +108,8 @@ void CRUDHandler::handleRead(BLEManager* manager, const String& type, const Json
       manager->sendResponse(response);
     } else if (!device.isEmpty()) {
       streamDeviceId = device;
-      Serial.printf("Data streaming started for device: %s\n", device.c_str());
+      Serial.printf("[CRUD] Data streaming started for device: %s\n", device.c_str());
+      Serial.printf("[CRUD] StreamDeviceId set to: '%s'\n", streamDeviceId.c_str());
       DynamicJsonDocument response(128);
       response["status"] = "ok";
       response["message"] = "Data streaming started for device: " + device;
