@@ -46,28 +46,25 @@ bool ConfigManager::begin() {
     DynamicJsonDocument doc(64);
     doc.to<JsonObject>();
     saveJson(DEVICES_FILE, doc);
+    Serial.println("Created empty devices file");
   }
   
   if (!SPIFFS.exists(REGISTERS_FILE)) {
     DynamicJsonDocument doc(64);
     doc.to<JsonObject>();
     saveJson(REGISTERS_FILE, doc);
+    Serial.println("Created empty registers file");
   }
   
-  // Load cache on startup
-  Serial.println("Loading configuration cache...");
-  
-  // Force load devices cache
+  // Initialize cache as invalid - will be loaded on first access
   devicesCacheValid = false;
-  bool devicesLoaded = loadDevicesCache();
-  Serial.printf("Devices cache load result: %s\n", devicesLoaded ? "SUCCESS" : "FAILED");
-  
-  // Force load registers cache
   registersCacheValid = false;
-  bool registersLoaded = loadRegistersCache();
-  Serial.printf("Registers cache load result: %s\n", registersLoaded ? "SUCCESS" : "FAILED");
   
-  Serial.println("ConfigManager initialized with cache loaded");
+  // Clear cache content
+  devicesCache->clear();
+  registersCache->clear();
+  
+  Serial.println("ConfigManager initialized - cache will be loaded on demand");
   return true;
 }
 
@@ -252,13 +249,30 @@ void ConfigManager::getDevicesSummary(JsonArray& summary) {
 }
 
 String ConfigManager::createRegister(const String& deviceId, JsonObjectConst config) {
+  Serial.printf("[CREATE_REGISTER] Starting for device: %s\n", deviceId.c_str());
+  
+  // Debug: Print all config fields
+  Serial.println("[CREATE_REGISTER] Config fields:");
+  for (JsonPairConst kv : config) {
+    Serial.printf("  %s: %s (type: %s)\n", 
+                  kv.key().c_str(), 
+                  kv.value().as<String>().c_str(),
+                  kv.value().is<String>() ? "string" : "other");
+  }
+  
   if (!loadDevicesCache()) {
-    Serial.println("Failed to load devices cache");
+    Serial.println("[CREATE_REGISTER] Failed to load devices cache");
     return "";
   }
   
   if (!devicesCache->containsKey(deviceId)) {
-    Serial.printf("Device %s not found in cache\n", deviceId.c_str());
+    Serial.printf("[CREATE_REGISTER] Device %s not found in cache\n", deviceId.c_str());
+    return "";
+  }
+  
+  // Validate required fields
+  if (!config.containsKey("address") || !config.containsKey("register_name")) {
+    Serial.println("[CREATE_REGISTER] Missing required register fields: address or register_name");
     return "";
   }
   
@@ -272,58 +286,110 @@ String ConfigManager::createRegister(const String& deviceId, JsonObjectConst con
   }
   
   JsonArray registers = device["registers"];
-  Serial.printf("Registers array size before: %d\n", registers.size());
+  
+  // Parse address - handle both string and integer formats
+  int address = 0;
+  if (config["address"].is<String>()) {
+    address = config["address"].as<String>().toInt();
+  } else {
+    address = config["address"].as<int>();
+  }
+  
+  if (address <= 0) {
+    Serial.printf("Invalid address: %d\n", address);
+    return "";
+  }
+  
+  // Check for duplicate address
+  for (JsonVariant regVar : registers) {
+    JsonObject existingReg = regVar.as<JsonObject>();
+    int existingAddress = existingReg["address"].is<String>() ? 
+                         existingReg["address"].as<String>().toInt() : 
+                         existingReg["address"].as<int>();
+    
+    if (existingAddress == address) {
+      Serial.printf("Register address %d already exists in device %s\n", address, deviceId.c_str());
+      return "";
+    }
+  }
+  
+  Serial.printf("[CREATE_REGISTER] Registers array size before: %d\n", registers.size());
   
   JsonObject newRegister = registers.createNestedObject();
   for (JsonPairConst kv : config) {
-    newRegister[kv.key()] = kv.value();
+    if (String(kv.key().c_str()) == "address") {
+      // Always store address as integer
+      newRegister[kv.key()] = address;
+    } else {
+      newRegister[kv.key()] = kv.value();
+    }
   }
   newRegister["register_id"] = registerId;
   
-  Serial.printf("Registers array size after: %d\n", registers.size());
-  Serial.printf("Created register %s for device %s\n", registerId.c_str(), deviceId.c_str());
+  Serial.printf("[CREATE_REGISTER] Registers array size after: %d\n", registers.size());
+  Serial.printf("[CREATE_REGISTER] Created register %s (address: %d) for device %s\n", registerId.c_str(), address, deviceId.c_str());
+  
+  // Debug: Print the new register content
+  Serial.println("[CREATE_REGISTER] New register content:");
+  for (JsonPair kv : newRegister) {
+    Serial.printf("  %s: %s\n", kv.key().c_str(), kv.value().as<String>().c_str());
+  }
   
   // Save to file and keep cache valid
   if (saveJson(DEVICES_FILE, *devicesCache)) {
-    Serial.println("Successfully saved devices file and updated cache");
+    Serial.println("[CREATE_REGISTER] Successfully saved devices file and updated cache");
     return registerId;
   } else {
-    Serial.println("Failed to save devices file");
+    Serial.println("[CREATE_REGISTER] Failed to save devices file");
     invalidateDevicesCache();
   }
   return "";
 }
 
 bool ConfigManager::listRegisters(const String& deviceId, JsonArray& registers) {
-  DynamicJsonDocument devices(8192); // Increased size for registers
-  if (!loadJson(DEVICES_FILE, devices)) return false;
+  if (!loadDevicesCache()) {
+    Serial.println("Failed to load devices cache for listRegisters");
+    return false;
+  }
   
-  if (devices.containsKey(deviceId)) {
-    JsonArray deviceRegisters = devices[deviceId]["registers"];
-    Serial.printf("Device %s has %d registers in storage\n", deviceId.c_str(), deviceRegisters.size());
-    for (JsonVariant reg : deviceRegisters) {
-      registers.add(reg);
+  if (devicesCache->containsKey(deviceId)) {
+    JsonObject device = (*devicesCache)[deviceId];
+    if (device.containsKey("registers")) {
+      JsonArray deviceRegisters = device["registers"];
+      Serial.printf("Device %s has %d registers in cache\n", deviceId.c_str(), deviceRegisters.size());
+      for (JsonVariant reg : deviceRegisters) {
+        registers.add(reg);
+      }
+      return true;
+    } else {
+      Serial.printf("Device %s has no registers array\n", deviceId.c_str());
     }
-    return true;
+  } else {
+    Serial.printf("Device %s not found in cache\n", deviceId.c_str());
   }
   return false;
 }
 
 bool ConfigManager::getRegistersSummary(const String& deviceId, JsonArray& summary) {
-  DynamicJsonDocument devices(4096);
-  if (!loadJson(DEVICES_FILE, devices)) return false;
+  if (!loadDevicesCache()) {
+    Serial.println("Failed to load devices cache for getRegistersSummary");
+    return false;
+  }
   
-  if (devices.containsKey(deviceId)) {
-    JsonArray registers = devices[deviceId]["registers"];
-    for (JsonVariant reg : registers) {
-      JsonObject regSummary = summary.createNestedObject();
-      regSummary["register_id"] = reg["register_id"];
-      regSummary["register_name"] = reg["register_name"];
-      regSummary["address"] = reg["address"];
-      regSummary["data_type"] = reg["data_type"];
-      regSummary["description"] = reg["description"];
+  if (devicesCache->containsKey(deviceId)) {
+    JsonObject device = (*devicesCache)[deviceId];
+    if (device.containsKey("registers")) {
+      JsonArray registers = device["registers"];
+      for (JsonVariant reg : registers) {
+        JsonObject regSummary = summary.createNestedObject();
+        regSummary["register_id"] = reg["register_id"];
+        regSummary["register_name"] = reg["register_name"];
+        regSummary["address"] = reg["address"];
+        regSummary["data_type"] = reg["data_type"];
+        regSummary["description"] = reg["description"];
+      }
+      return true;
     }
-    return true;
   }
   return false;
 }
@@ -346,9 +412,43 @@ bool ConfigManager::updateRegister(const String& deviceId, const String& registe
   for (JsonVariant regVar : registers) {
     JsonObject reg = regVar.as<JsonObject>();
     if (reg["register_id"] == registerId) {
+      // Check for duplicate address if address is being updated
+      if (config.containsKey("address")) {
+        int newAddress = config["address"].is<String>() ? 
+                        config["address"].as<String>().toInt() : 
+                        config["address"].as<int>();
+        
+        int currentAddress = reg["address"].is<String>() ? 
+                            reg["address"].as<String>().toInt() : 
+                            reg["address"].as<int>();
+        
+        if (newAddress != currentAddress) {
+          for (JsonVariant otherRegVar : registers) {
+            JsonObject otherReg = otherRegVar.as<JsonObject>();
+            if (otherReg["register_id"] != registerId) {
+              int otherAddress = otherReg["address"].is<String>() ? 
+                                otherReg["address"].as<String>().toInt() : 
+                                otherReg["address"].as<int>();
+              
+              if (otherAddress == newAddress) {
+                Serial.printf("Address %d already exists in another register\n", newAddress);
+                return false;
+              }
+            }
+          }
+        }
+      }
+      
       // Update register configuration while preserving register_id
       for (JsonPairConst kv : config) {
-        reg[kv.key()] = kv.value();
+        if (String(kv.key().c_str()) == "address") {
+          int address = kv.value().is<String>() ? 
+                       kv.value().as<String>().toInt() : 
+                       kv.value().as<int>();
+          reg[kv.key()] = address;
+        } else {
+          reg[kv.key()] = kv.value();
+        }
       }
       reg["register_id"] = registerId; // Ensure register_id is preserved
       
@@ -368,18 +468,39 @@ bool ConfigManager::updateRegister(const String& deviceId, const String& registe
 }
 
 bool ConfigManager::deleteRegister(const String& deviceId, const String& registerId) {
-  DynamicJsonDocument devices(4096);
-  if (!loadJson(DEVICES_FILE, devices)) return false;
+  if (!loadDevicesCache()) {
+    Serial.println("Failed to load devices cache for deleteRegister");
+    return false;
+  }
   
-  if (devices.containsKey(deviceId)) {
-    JsonArray registers = devices[deviceId]["registers"];
-    for (int i = 0; i < registers.size(); i++) {
-      if (registers[i]["register_id"] == registerId) {
-        registers.remove(i);
-        return saveJson(DEVICES_FILE, devices);
+  if (!devicesCache->containsKey(deviceId)) {
+    Serial.printf("Device %s not found for register deletion\n", deviceId.c_str());
+    return false;
+  }
+  
+  JsonObject device = (*devicesCache)[deviceId];
+  if (!device.containsKey("registers")) {
+    Serial.printf("No registers found for device %s\n", deviceId.c_str());
+    return false;
+  }
+  
+  JsonArray registers = device["registers"];
+  for (int i = 0; i < registers.size(); i++) {
+    if (registers[i]["register_id"] == registerId) {
+      registers.remove(i);
+      
+      // Save to file and keep cache valid
+      if (saveJson(DEVICES_FILE, *devicesCache)) {
+        Serial.printf("Register %s deleted successfully\n", registerId.c_str());
+        return true;
       }
+      
+      invalidateDevicesCache();
+      return false;
     }
   }
+  
+  Serial.printf("Register %s not found in device %s\n", registerId.c_str(), deviceId.c_str());
   return false;
 }
 
@@ -391,12 +512,13 @@ bool ConfigManager::loadDevicesCache() {
   
   Serial.println("[CACHE] Loading devices cache from file...");
   
-  Serial.println("Loading devices cache...");
-  
-  // Check if file exists and has content
+  // Check if file exists
   if (!SPIFFS.exists(DEVICES_FILE)) {
-    Serial.println("Devices file does not exist");
-    return false;
+    Serial.println("Devices file does not exist, creating empty cache");
+    devicesCache->clear();
+    devicesCache->to<JsonObject>();
+    devicesCacheValid = true;
+    return true;
   }
   
   File file = SPIFFS.open(DEVICES_FILE, "r");
@@ -408,46 +530,63 @@ bool ConfigManager::loadDevicesCache() {
   size_t fileSize = file.size();
   Serial.printf("Devices file size: %d bytes\n", fileSize);
   
-  if (fileSize == 0) {
-    Serial.println("Devices file is empty");
+  if (fileSize <= 2) { // Empty or just {}
+    Serial.println("Devices file is empty, creating empty cache");
     file.close();
-    return false;
+    devicesCache->clear();
+    devicesCache->to<JsonObject>();
+    devicesCacheValid = true;
+    return true;
   }
   
   file.close();
+  
+  // Clear cache before loading
+  devicesCache->clear();
   
   if (loadJson(DEVICES_FILE, *devicesCache)) {
     devicesCacheValid = true;
     JsonObject devicesObj = devicesCache->as<JsonObject>();
     Serial.printf("Devices cache loaded: %d devices\n", devicesObj.size());
     
-    // Debug: Print device IDs and their content
+    // Validate and count registers for each device
     for (JsonPair kv : devicesObj) {
       const char* keyPtr = kv.key().c_str();
-      Serial.printf("Found device - Key: '%s' (len: %d)\n", keyPtr, strlen(keyPtr));
-      
-      // Print first few characters in hex to check for hidden characters
-      Serial.print("Key hex: ");
-      for (int i = 0; i < min(10, (int)strlen(keyPtr)); i++) {
-        Serial.printf("%02X ", (unsigned char)keyPtr[i]);
-      }
-      Serial.println();
-      
-      // Check device content
       JsonObject deviceObj = kv.value().as<JsonObject>();
+      
       if (deviceObj.containsKey("device_name")) {
-        Serial.printf("  Device name: %s\n", deviceObj["device_name"].as<String>().c_str());
+        int registerCount = 0;
+        if (deviceObj.containsKey("registers")) {
+          registerCount = deviceObj["registers"].size();
+        }
+        Serial.printf("  Device '%s': %s (%d registers)\n", 
+                      keyPtr, 
+                      deviceObj["device_name"].as<String>().c_str(),
+                      registerCount);
       }
     }
     
     return true;
   }
+  
   Serial.println("Failed to load devices cache");
+  devicesCacheValid = false;
   return false;
 }
 
 bool ConfigManager::loadRegistersCache() {
   if (registersCacheValid) return true;
+  
+  // Check if file exists
+  if (!SPIFFS.exists(REGISTERS_FILE)) {
+    Serial.println("Registers file does not exist, creating empty cache");
+    registersCache->clear();
+    registersCache->to<JsonObject>();
+    registersCacheValid = true;
+    return true;
+  }
+  
+  registersCache->clear();
   
   if (loadJson(REGISTERS_FILE, *registersCache)) {
     registersCacheValid = true;
@@ -614,79 +753,7 @@ void ConfigManager::removeCorruptKeys() {
   Serial.println("=== END REMOVING ===");
 }
 
-void ConfigManager::createTestDeviceIfEmpty() {
-  Serial.println("=== CREATING TEST DEVICE IF EMPTY ===");
-  
-  // Force reload cache
-  devicesCacheValid = false;
-  if (!loadDevicesCache()) {
-    Serial.println("Failed to load cache, creating empty cache");
-    devicesCache->clear();
-    devicesCache->to<JsonObject>();
-  }
-  
-  JsonObject devicesObj = devicesCache->as<JsonObject>();
-  
-  // Count valid devices
-  int validDeviceCount = 0;
-  for (JsonPair kv : devicesObj) {
-    const char* keyPtr = kv.key().c_str();
-    String deviceId = String(keyPtr);
-    
-    if (deviceId.length() > 2 && deviceId != "{}" && deviceId.indexOf('{') == -1) {
-      validDeviceCount++;
-    }
-  }
-  
-  Serial.printf("Found %d valid devices\n", validDeviceCount);
-  
-  if (validDeviceCount == 0) {
-    Serial.println("No valid devices found, creating test device...");
-    
-    // Create test device
-    String deviceId = generateId("D");
-    JsonObject device = devicesCache->createNestedObject(deviceId);
-    
-    device["device_id"] = deviceId;
-    device["device_name"] = "Test RTU Device";
-    device["protocol"] = "RTU";
-    device["serial_port"] = 1;
-    device["baud_rate"] = 9600;
-    device["parity"] = "None";
-    device["data_bits"] = 8;
-    device["stop_bits"] = 1;
-    device["slave_id"] = 1;
-    device["timeout"] = 1000;
-    device["retry_count"] = 3;
-    device["refresh_rate_ms"] = 5000;
-    
-    // Create test register
-    JsonArray registers = device.createNestedArray("registers");
-    JsonObject reg = registers.createNestedObject();
-    
-    String registerId = generateId("R");
-    reg["register_id"] = registerId;
-    reg["address"] = 40001;
-    reg["register_name"] = "SUHU";
-    reg["type"] = "Holding Register";
-    reg["function_code"] = 3;
-    reg["data_type"] = "float32";
-    reg["description"] = "Temperature Sensor";
-    reg["refresh_rate_ms"] = 5000;
-    
-    // Save to file
-    if (saveJson(DEVICES_FILE, *devicesCache)) {
-      Serial.printf("Created test device %s with register %s\n", deviceId.c_str(), registerId.c_str());
-      devicesCacheValid = true;
-    } else {
-      Serial.println("Failed to save test device");
-    }
-  } else {
-    Serial.println("Valid devices exist, no need to create test device");
-  }
-  
-  Serial.println("=== END CREATING TEST DEVICE ===");
-}
+
 
 void ConfigManager::clearAllConfigurations() {
   Serial.println("Clearing all device and register configurations...");

@@ -46,7 +46,6 @@ public:
   void debugDevicesFile();
   void fixCorruptDeviceIds();
   void removeCorruptKeys();
-  void createTestDeviceIfEmpty();
   
   // Register operations
   String createRegister(const String& deviceId, JsonObjectConst config);

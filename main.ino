@@ -85,20 +85,21 @@ void setup() {
   
   // Debug: Show devices file content
   configManager->debugDevicesFile();
+
+    // Force clear all cache and reload
+  configManager->clearAllConfigurations();
+  
+  // Create test device if no valid devices exist
+
+  
+  // Clear all existing configurations for fresh start
+  //configManager->clearAllConfigurations(); // Commented out to preserve existing devices
+
   
   // Fix corrupt device IDs by recreating clean file
   configManager->fixCorruptDeviceIds();
   
-  // Force clear all cache and reload
-  configManager->clearAllConfigurations();
-  
-  // Create test device if no valid devices exist
-  configManager->createTestDeviceIfEmpty();
-  
-  Serial.println("[MAIN] Configuration cleanup completed.");
-  
-  // Clear all existing configurations for fresh start
-  //configManager->clearAllConfigurations(); // Commented out to preserve existing devices
+  Serial.println("[MAIN] Configuration initialization completed.");
   
   // Initialize queue manager
   queueManager = QueueManager::getInstance();
