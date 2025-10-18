@@ -17,6 +17,7 @@
 #include "ModbusRtuService.h"
 #include "QueueManager.h"
 #include "MqttManager.h"
+#include "HttpManager.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_heap_caps.h>
@@ -37,6 +38,7 @@ ModbusTcpService* modbusTcpService = nullptr;
 ModbusRtuService* modbusRtuService = nullptr;
 QueueManager* queueManager = nullptr;
 MqttManager* mqttManager = nullptr;
+HttpManager* httpManager = nullptr;
 
 // Cleanup function for failed initialization
 void cleanup() {
@@ -82,7 +84,7 @@ void setup() {
   }
   
   // Clear all existing configurations for fresh start
-  // configManager->clearAllConfigurations();
+  configManager->clearAllConfigurations();
   
   // Initialize queue manager
   queueManager = QueueManager::getInstance();
@@ -152,13 +154,34 @@ void setup() {
     Serial.println("Failed to initialize Modbus RTU service");
   }
   
+  // Initialize protocol managers based on server configuration
+  String protocol = serverConfig->getProtocol();
+  Serial.printf("Selected protocol: %s\n", protocol.c_str());
+  
   // Initialize MQTT Manager
   mqttManager = MqttManager::getInstance(configManager, serverConfig, networkManager);
   if (mqttManager && mqttManager->init()) {
-    mqttManager->start();
-    Serial.println("MQTT Manager started");
+    if (protocol == "mqtt") {
+      mqttManager->start();
+      Serial.println("MQTT Manager started (active protocol)");
+    } else {
+      Serial.println("MQTT Manager initialized but not started (inactive protocol)");
+    }
   } else {
     Serial.println("Failed to initialize MQTT Manager");
+  }
+  
+  // Initialize HTTP Manager
+  httpManager = HttpManager::getInstance(configManager, serverConfig, networkManager);
+  if (httpManager && httpManager->init()) {
+    if (protocol == "http") {
+      httpManager->start();
+      Serial.println("HTTP Manager started (active protocol)");
+    } else {
+      Serial.println("HTTP Manager initialized but not started (inactive protocol)");
+    }
+  } else {
+    Serial.println("Failed to initialize HTTP Manager");
   }
   
   // Initialize CRUD handler in PSRAM

@@ -83,7 +83,7 @@ arduino-cli lib install "Ethernet@2.0.0"
 - **Modbus RTU**: Dual serial bus support (Bus 1: GPIO 15/16/39, Bus 2: GPIO 17/18/40)
 - **BLE Service**: Configuration management via Bluetooth Low Energy
 - **MQTT Client**: Real-time data publishing and command subscription
-- **HTTP Client**: RESTful API integration for cloud services
+- **HTTP Client**: RESTful API integration for cloud services with automatic retry and error handling
 
 ### Network Connectivity
 - **WiFi Manager**: Automatic connection with credential management
@@ -110,6 +110,7 @@ arduino-cli lib install "Ethernet@2.0.0"
 - **Device Management**: Create, read, update, delete Modbus devices
 - **Register Management**: Individual register configuration and monitoring
 - **Server Configuration**: Network, protocol, and logging settings
+- **Protocol Selection**: Choose between MQTT and HTTP for data transmission
 - **Summary Views**: Compact device and register overviews
 - **Validation**: Input validation and error reporting
 
@@ -1014,6 +1015,174 @@ if __name__ == "__main__":
 - **Validation failed**: Invalid configuration
 - **Operation failed**: System error
 
+## HTTP Manager Implementation
+
+### Overview
+The HTTP Manager provides RESTful API integration for sending Modbus data to cloud services or web applications. It works alongside the MQTT Manager and can be selected as the primary data transmission protocol.
+
+### Key Features
+- **Automatic Protocol Selection**: Based on server configuration
+- **Retry Mechanism**: Configurable retry count with exponential backoff
+- **Multiple HTTP Methods**: Support for POST, PUT, PATCH
+- **Custom Headers**: Configurable HTTP headers for authentication and metadata
+- **Network Resilience**: Automatic reconnection and error handling
+- **Queue Management**: Integrated with QueueManager for reliable data delivery
+
+### Configuration Structure
+```json
+{
+  "http_config": {
+    "enabled": true,
+    "endpoint_url": "https://api.example.com/data",
+    "method": "POST",
+    "headers": {
+      "Authorization": "Bearer your_token_here",
+      "Content-Type": "application/json",
+      "X-Device-ID": "gateway_001"
+    },
+    "body_format": "json",
+    "timeout": 15000,
+    "retry": 3
+  }
+}
+```
+
+### Protocol Selection
+The system automatically selects the active protocol based on the `protocol` field in server configuration:
+- `"protocol": "http"` - Activates HTTP Manager
+- `"protocol": "mqtt"` - Activates MQTT Manager
+
+### HTTP Methods Supported
+- **POST**: Create new resources
+- **PUT**: Update existing resources
+- **PATCH**: Partial updates
+
+### Error Handling
+- **Network Errors**: Automatic retry with configurable count
+- **HTTP Errors**: 4xx/5xx responses logged and retried
+- **Timeout Handling**: Configurable request timeout
+- **Queue Preservation**: Failed requests re-queued for retry
+
+### Usage Examples
+
+#### Basic HTTP Configuration
+```json
+{
+  "op": "update",
+  "type": "server_config",
+  "config": {
+    "protocol": "http",
+    "http_config": {
+      "enabled": true,
+      "endpoint_url": "https://api.thingsboard.io/api/v1/telemetry",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer ACCESS_TOKEN",
+        "Content-Type": "application/json"
+      },
+      "timeout": 10000,
+      "retry": 3
+    }
+  }
+}
+```
+
+#### Advanced HTTP Configuration with Custom Headers
+```json
+{
+  "op": "update",
+  "type": "server_config",
+  "config": {
+    "protocol": "http",
+    "http_config": {
+      "enabled": true,
+      "endpoint_url": "https://api.industrial-iot.com/v2/devices/data",
+      "method": "PUT",
+      "headers": {
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+        "Content-Type": "application/json",
+        "X-Device-ID": "esp32_gateway_001",
+        "X-API-Version": "2.1",
+        "X-Timestamp": "auto"
+      },
+      "body_format": "json",
+      "timeout": 20000,
+      "retry": 5
+    }
+  }
+}
+```
+
+### Data Payload Format
+The HTTP Manager sends data in JSON format:
+```json
+{
+  "device_id": "D7F2A9B",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "data": {
+    "register_id": "R8C3F2A",
+    "register_name": "TEMP_SENSOR",
+    "value": 25.6,
+    "unit": "°C",
+    "quality": "good"
+  }
+}
+```
+
+### Integration with Other Services
+
+#### ThingsBoard Integration
+```json
+{
+  "http_config": {
+    "enabled": true,
+    "endpoint_url": "https://demo.thingsboard.io/api/v1/ACCESS_TOKEN/telemetry",
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "timeout": 10000,
+    "retry": 3
+  }
+}
+```
+
+#### AWS IoT Core Integration
+```json
+{
+  "http_config": {
+    "enabled": true,
+    "endpoint_url": "https://your-endpoint.iot.region.amazonaws.com/topics/device/data",
+    "method": "POST",
+    "headers": {
+      "Authorization": "AWS4-HMAC-SHA256 Credential=...",
+      "Content-Type": "application/json",
+      "X-Amz-Date": "auto"
+    },
+    "timeout": 15000,
+    "retry": 3
+  }
+}
+```
+
+#### Azure IoT Hub Integration
+```json
+{
+  "http_config": {
+    "enabled": true,
+    "endpoint_url": "https://your-hub.azure-devices.net/devices/device-id/messages/events",
+    "method": "POST",
+    "headers": {
+      "Authorization": "SharedAccessSignature sr=...",
+      "Content-Type": "application/json",
+      "iothub-message-source": "telemetry"
+    },
+    "timeout": 12000,
+    "retry": 4
+  }
+}
+```
+
 ## Best Practices
 
 ### Performance Optimization
@@ -1021,12 +1190,16 @@ if __name__ == "__main__":
 2. **Batch register operations** when possible
 3. **Monitor memory usage** with PSRAM
 4. **Use summary APIs** for efficient data retrieval
+5. **Choose optimal protocol** (HTTP for cloud APIs, MQTT for real-time)
 
 ### Configuration Guidelines
 1. **TCP devices**: Use for Ethernet/WiFi connections
 2. **RTU devices**: Distribute across both buses for parallel processing
 3. **Baud rates**: Match device specifications
 4. **Timeouts**: Adjust based on network/serial latency
+5. **Protocol Selection**: Use HTTP for cloud APIs, MQTT for real-time messaging
+6. **HTTP Timeouts**: Set appropriate timeouts based on cloud service response times
+7. **Retry Strategy**: Configure retry counts based on network reliability
 
 ### Memory Management
 1. **Limit devices**: ~100 devices max without PSRAM
