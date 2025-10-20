@@ -155,6 +155,14 @@ void ModbusRtuService::readRtuDeviceData(const JsonObject& deviceConfig) {
     return;
   }
   
+  // Set slave ID for this device
+  Serial.printf("[RTU] Setting slave ID to %d for device %s\n", slaveId, deviceId.c_str());
+  if (serialPort == 1) {
+    modbus1->begin(slaveId, *serial1);
+  } else if (serialPort == 2) {
+    modbus2->begin(slaveId, *serial2);
+  }
+  
   for (JsonVariant regVar : registers) {
     if (!running) break;
     

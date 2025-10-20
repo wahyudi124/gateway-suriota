@@ -111,9 +111,16 @@ String ConfigManager::createDevice(JsonObjectConst config) {
   String deviceId = generateId("D");
   JsonObject device = devicesCache->createNestedObject(deviceId);
   
-  // Copy config
+  // Copy config with proper type conversion
   for (JsonPairConst kv : config) {
-    device[kv.key()] = kv.value();
+    String key = kv.key().c_str();
+    if (key == "slave_id" || key == "port" || key == "timeout" || key == "retry_count" || key == "refresh_rate_ms" || key == "baud_rate" || key == "data_bits" || key == "stop_bits" || key == "serial_port") {
+      // Convert string numbers to integers
+      int value = kv.value().is<String>() ? kv.value().as<String>().toInt() : kv.value().as<int>();
+      device[kv.key()] = value;
+    } else {
+      device[kv.key()] = kv.value();
+    }
   }
   device["device_id"] = deviceId;
   JsonArray registers = device.createNestedArray("registers");
@@ -169,9 +176,16 @@ bool ConfigManager::updateDevice(const String& deviceId, JsonObjectConst config)
   // Update device configuration while preserving device_id and registers
   JsonArray existingRegisters = device["registers"];
   
-  // Update all config fields
+  // Update all config fields with proper type conversion
   for (JsonPairConst kv : config) {
-    device[kv.key()] = kv.value();
+    String key = kv.key().c_str();
+    if (key == "slave_id" || key == "port" || key == "timeout" || key == "retry_count" || key == "refresh_rate_ms" || key == "baud_rate" || key == "data_bits" || key == "stop_bits" || key == "serial_port") {
+      // Convert string numbers to integers
+      int value = kv.value().is<String>() ? kv.value().as<String>().toInt() : kv.value().as<int>();
+      device[kv.key()] = value;
+    } else {
+      device[kv.key()] = kv.value();
+    }
   }
   
   // Ensure device_id and registers are preserved
@@ -317,9 +331,14 @@ String ConfigManager::createRegister(const String& deviceId, JsonObjectConst con
   
   JsonObject newRegister = registers.createNestedObject();
   for (JsonPairConst kv : config) {
-    if (String(kv.key().c_str()) == "address") {
+    String key = kv.key().c_str();
+    if (key == "address") {
       // Always store address as integer
       newRegister[kv.key()] = address;
+    } else if (key == "function_code" || key == "refresh_rate_ms") {
+      // Convert string numbers to integers
+      int value = kv.value().is<String>() ? kv.value().as<String>().toInt() : kv.value().as<int>();
+      newRegister[kv.key()] = value;
     } else {
       newRegister[kv.key()] = kv.value();
     }
@@ -441,11 +460,12 @@ bool ConfigManager::updateRegister(const String& deviceId, const String& registe
       
       // Update register configuration while preserving register_id
       for (JsonPairConst kv : config) {
-        if (String(kv.key().c_str()) == "address") {
-          int address = kv.value().is<String>() ? 
-                       kv.value().as<String>().toInt() : 
-                       kv.value().as<int>();
-          reg[kv.key()] = address;
+        String key = kv.key().c_str();
+        if (key == "address" || key == "function_code" || key == "refresh_rate_ms") {
+          int value = kv.value().is<String>() ? 
+                     kv.value().as<String>().toInt() : 
+                     kv.value().as<int>();
+          reg[kv.key()] = value;
         } else {
           reg[kv.key()] = kv.value();
         }

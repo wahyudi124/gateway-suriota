@@ -89,7 +89,7 @@ async def test_streaming():
     
     # Test 3: Start streaming for a specific device
     # Replace with actual device ID from step 1
-    device_id = "Dec482"  # Use the device ID from your log
+    device_id = "Dca4cf"  # Use the device ID from your log
     print(f"\n3. Starting streaming for device {device_id}...")
     await tester.send_command({
         "op": "read",
