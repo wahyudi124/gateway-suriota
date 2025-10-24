@@ -38,6 +38,8 @@ private:
   void readRtuDevicesLoop();
   void readRtuDeviceData(const JsonObject& deviceConfig);
   float processRegisterValue(const JsonObject& reg, uint16_t rawValue);
+  float processMultiRegisterValue(const JsonObject& reg, uint16_t* values, int count);
+  bool readMultipleRegisters(ModbusMaster* modbus, uint8_t functionCode, uint16_t address, int count, uint16_t* values);
   void storeRegisterValue(const String& deviceId, const JsonObject& reg, float value);
   ModbusMaster* getModbusForBus(int serialPort);
 

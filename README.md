@@ -786,7 +786,7 @@ All responses follow this JSON format:
 
 ### Register Configuration Examples
 
-#### Temperature Sensor Register
+#### Temperature Sensor Register (32-bit Float)
 ```json
 {
   "op": "create",
@@ -797,9 +797,45 @@ All responses follow this JSON format:
     "register_name": "TEMP_SENSOR_1",
     "type": "Holding Register",
     "function_code": 3,
-    "data_type": "float32",
+    "data_type": "FLOAT32_BE",
     "description": "Main Temperature Sensor (°C)",
     "refresh_rate_ms": 1000
+  }
+}
+```
+
+#### Energy Meter Register (32-bit Integer)
+```json
+{
+  "op": "create",
+  "type": "register",
+  "device_id": "D7F2A9B",
+  "config": {
+    "address": 40003,
+    "register_name": "ENERGY_TOTAL",
+    "type": "Holding Register",
+    "function_code": 3,
+    "data_type": "UINT32_LE",
+    "description": "Total Energy Consumption (kWh)",
+    "refresh_rate_ms": 5000
+  }
+}
+```
+
+#### High Precision Counter (64-bit)
+```json
+{
+  "op": "create",
+  "type": "register",
+  "device_id": "D7F2A9B",
+  "config": {
+    "address": 40005,
+    "register_name": "PULSE_COUNTER",
+    "type": "Holding Register",
+    "function_code": 3,
+    "data_type": "UINT64_BE",
+    "description": "High Precision Pulse Counter",
+    "refresh_rate_ms": 2000
   }
 }
 ```
@@ -992,11 +1028,53 @@ if __name__ == "__main__":
 - **Discrete Input**: Read Only Boolean (Function Code 2)
 
 ### Data Types
-- **int16**: 16-bit signed integer
-- **int32**: 32-bit signed integer  
-- **float32**: 32-bit floating point
-- **bool**: Boolean value
-- **string**: String value
+
+#### Single Register Types (16-bit)
+| Type | Description | Registers | Range |
+|------|-------------|-----------|-------|
+| `int16` | 16-bit signed integer | 1 | -32,768 to 32,767 |
+| `uint16` | 16-bit unsigned integer | 1 | 0 to 65,535 |
+| `bool` | Boolean value | 1 | true/false |
+| `binary` | Binary data | 1 | Raw 16-bit value |
+
+#### Multi-Register Types (32-bit)
+| Type | Description | Registers | Byte Order |
+|------|-------------|-----------|------------|
+| `INT32_BE` | 32-bit signed integer | 2 | Big Endian |
+| `INT32_LE` | 32-bit signed integer | 2 | Little Endian |
+| `INT32_BE_BS` | 32-bit signed integer | 2 | Big Endian + Byte Swap |
+| `INT32_LE_BS` | 32-bit signed integer | 2 | Little Endian + Byte Swap |
+| `UINT32_BE` | 32-bit unsigned integer | 2 | Big Endian |
+| `UINT32_LE` | 32-bit unsigned integer | 2 | Little Endian |
+| `UINT32_BE_BS` | 32-bit unsigned integer | 2 | Big Endian + Byte Swap |
+| `UINT32_LE_BS` | 32-bit unsigned integer | 2 | Little Endian + Byte Swap |
+| `FLOAT32_BE` | 32-bit IEEE 754 float | 2 | Big Endian |
+| `FLOAT32_LE` | 32-bit IEEE 754 float | 2 | Little Endian |
+| `FLOAT32_BE_BS` | 32-bit IEEE 754 float | 2 | Big Endian + Byte Swap |
+| `FLOAT32_LE_BS` | 32-bit IEEE 754 float | 2 | Little Endian + Byte Swap |
+
+#### Multi-Register Types (64-bit)
+| Type | Description | Registers | Byte Order |
+|------|-------------|-----------|------------|
+| `INT64_BE` | 64-bit signed integer | 4 | Big Endian |
+| `INT64_LE` | 64-bit signed integer | 4 | Little Endian |
+| `INT64_BE_BS` | 64-bit signed integer | 4 | Big Endian + Byte Swap |
+| `INT64_LE_BS` | 64-bit signed integer | 4 | Little Endian + Byte Swap |
+| `UINT64_BE` | 64-bit unsigned integer | 4 | Big Endian |
+| `UINT64_LE` | 64-bit unsigned integer | 4 | Little Endian |
+| `UINT64_BE_BS` | 64-bit unsigned integer | 4 | Big Endian + Byte Swap |
+| `UINT64_LE_BS` | 64-bit unsigned integer | 4 | Little Endian + Byte Swap |
+| `DOUBLE64_BE` | 64-bit IEEE 754 double | 4 | Big Endian |
+| `DOUBLE64_LE` | 64-bit IEEE 754 double | 4 | Little Endian |
+| `DOUBLE64_BE_BS` | 64-bit IEEE 754 double | 4 | Big Endian + Byte Swap |
+| `DOUBLE64_LE_BS` | 64-bit IEEE 754 double | 4 | Little Endian + Byte Swap |
+
+#### Legacy Types (Backward Compatibility)
+| Type | Description | Registers | Range |
+|------|-------------|-----------|-------|
+| `int32` | 32-bit signed (BE) | 2 | -2,147,483,648 to 2,147,483,647 |
+| `float32` | 32-bit float (BE) | 2 | ±3.4E±38 (7 digits) |
+| `string` | Text string | Variable | UTF-8 encoded |
 
 ## Error Handling
 

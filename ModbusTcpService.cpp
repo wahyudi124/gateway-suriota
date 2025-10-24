@@ -167,9 +167,21 @@ void ModbusTcpService::readTcpDeviceData(const JsonObject& deviceConfig) {
       }
     } else {
       // Read registers
-      uint16_t result = 0;
-      if (readModbusRegister(ip, port, slaveId, functionCode, address, &result)) {
-        float value = processRegisterValue(reg, result);
+      String dataType = reg["data_type"] | "int16";
+      int registerCount = 1;
+      
+      // Determine register count based on data type
+      if (dataType.startsWith("INT32") || dataType.startsWith("UINT32") || dataType.startsWith("FLOAT32")) {
+        registerCount = 2;
+      } else if (dataType.startsWith("INT64") || dataType.startsWith("UINT64") || dataType.startsWith("DOUBLE64")) {
+        registerCount = 4;
+      }
+      
+      uint16_t results[4];
+      if (readModbusRegisters(ip, port, slaveId, functionCode, address, registerCount, results)) {
+        float value = (registerCount == 1) ? 
+                     processRegisterValue(reg, results[0]) : 
+                     processMultiRegisterValue(reg, results, registerCount);
         storeRegisterValue(deviceId, reg, value);
         Serial.printf("%s: %s = %.2f\n", deviceId.c_str(), registerName.c_str(), value);
       } else {
@@ -213,6 +225,41 @@ bool ModbusTcpService::readModbusRegister(const String& ip, int port, uint8_t sl
   client.stop();
   
   return parseModbusResponse(response, bytesRead, functionCode, result);
+}
+
+bool ModbusTcpService::readModbusRegisters(const String& ip, int port, uint8_t slaveId, uint8_t functionCode, uint16_t address, int count, uint16_t* results) {
+  EthernetClient client;
+  
+  if (!client.connect(ip.c_str(), port)) {
+    return false;
+  }
+  
+  // Build Modbus TCP request
+  uint8_t request[12];
+  uint16_t transId = transactionCounter++;
+  buildModbusRequest(request, transId, slaveId, functionCode, address, count);
+  
+  // Send request
+  client.write(request, 12);
+  
+  // Wait for response with timeout
+  unsigned long timeout = millis() + 5000;
+  int expectedBytes = 9 + (count * 2);
+  while (client.available() < expectedBytes && millis() < timeout) {
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+  
+  if (client.available() < expectedBytes) {
+    client.stop();
+    return false;
+  }
+  
+  // Read response
+  uint8_t response[256];
+  int bytesRead = client.readBytes(response, client.available());
+  client.stop();
+  
+  return parseMultiModbusResponse(response, bytesRead, functionCode, count, results);
 }
 
 bool ModbusTcpService::readModbusCoil(const String& ip, int port, uint8_t slaveId, uint16_t address, bool* result) {
@@ -307,19 +354,95 @@ bool ModbusTcpService::parseModbusResponse(uint8_t* buffer, int length, uint8_t 
   return false;
 }
 
+bool ModbusTcpService::parseMultiModbusResponse(uint8_t* buffer, int length, uint8_t expectedFunc, int count, uint16_t* results) {
+  if (length < (9 + count * 2)) {
+    return false;
+  }
+  
+  // Check function code
+  uint8_t funcCode = buffer[7];
+  if (funcCode != expectedFunc) {
+    return false;
+  }
+  
+  // Parse multiple registers
+  if (funcCode == 3 || funcCode == 4) {
+    uint8_t byteCount = buffer[8];
+    if (byteCount >= (count * 2)) {
+      for (int i = 0; i < count; i++) {
+        results[i] = (buffer[9 + i * 2] << 8) | buffer[10 + i * 2];
+      }
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+float ModbusTcpService::processMultiRegisterValue(const JsonObject& reg, uint16_t* values, int count) {
+  String dataType = reg["data_type"];
+  
+  if (count == 2) {
+    uint32_t combined;
+    if (dataType.endsWith("_BE")) {
+      combined = ((uint32_t)values[0] << 16) | values[1];
+    } else if (dataType.endsWith("_LE")) {
+      combined = ((uint32_t)values[1] << 16) | values[0];
+    } else if (dataType.endsWith("_BE_BS")) {
+      combined = (((uint32_t)values[0] & 0xFF) << 24) | (((uint32_t)values[0] & 0xFF00) << 8) | 
+                 (((uint32_t)values[1] & 0xFF) << 8) | ((uint32_t)values[1] >> 8);
+    } else if (dataType.endsWith("_LE_BS")) {
+      combined = (((uint32_t)values[1] & 0xFF) << 24) | (((uint32_t)values[1] & 0xFF00) << 8) | 
+                 (((uint32_t)values[0] & 0xFF) << 8) | ((uint32_t)values[0] >> 8);
+    } else {
+      combined = ((uint32_t)values[0] << 16) | values[1]; // Default BE
+    }
+    
+    if (dataType.startsWith("INT32")) {
+      return (int32_t)combined;
+    } else if (dataType.startsWith("UINT32")) {
+      return combined;
+    } else if (dataType.startsWith("FLOAT32")) {
+      return *(float*)&combined;
+    }
+  } else if (count == 4) {
+    // 64-bit data types - return as double but cast to float for compatibility
+    uint64_t combined;
+    if (dataType.endsWith("_BE")) {
+      combined = ((uint64_t)values[0] << 48) | ((uint64_t)values[1] << 32) | ((uint64_t)values[2] << 16) | values[3];
+    } else if (dataType.endsWith("_LE")) {
+      combined = ((uint64_t)values[3] << 48) | ((uint64_t)values[2] << 32) | ((uint64_t)values[1] << 16) | values[0];
+    } else {
+      combined = ((uint64_t)values[0] << 48) | ((uint64_t)values[1] << 32) | ((uint64_t)values[2] << 16) | values[3];
+    }
+    
+    if (dataType.startsWith("INT64")) {
+      return (float)(int64_t)combined;
+    } else if (dataType.startsWith("UINT64")) {
+      return (float)combined;
+    } else if (dataType.startsWith("DOUBLE64")) {
+      return (float)(*(double*)&combined);
+    }
+  }
+  
+  return values[0]; // Fallback
+}
+
 float ModbusTcpService::processRegisterValue(const JsonObject& reg, uint16_t rawValue) {
   String dataType = reg["data_type"];
   
   if (dataType == "int16") {
     return (int16_t)rawValue;
-  } else if (dataType == "int32") {
-    return rawValue; // For 32-bit, would need to read 2 registers
-  } else if (dataType == "float32") {
-    return rawValue / 100.0; // Simple scaling, adjust as needed
+  } else if (dataType == "uint16") {
+    return rawValue;
   } else if (dataType == "bool") {
     return rawValue != 0 ? 1.0 : 0.0;
+  } else if (dataType == "binary") {
+    return rawValue;
   }
   
+  // Multi-register types - need to read 2 registers
+  // For now return single register value, implement multi-register later
   return rawValue;
 }
 
