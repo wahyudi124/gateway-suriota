@@ -81,7 +81,7 @@ void ModbusRtuService::readRtuDevicesTask(void* parameter) {
 }
 
 void ModbusRtuService::readRtuDevicesLoop() {
-  DeviceTimer deviceTimers[10];
+  DeviceTimer deviceTimers[50]; // Support up to 50 devices
   int timerCount = 0;
   
   while (running) {
@@ -120,7 +120,7 @@ void ModbusRtuService::readRtuDevicesLoop() {
             }
           }
           
-          if (timerIndex == -1 && timerCount < 10) {
+          if (timerIndex == -1 && timerCount < 50) {
             timerIndex = timerCount++;
             deviceTimers[timerIndex].deviceId = deviceId;
             deviceTimers[timerIndex].lastRead = 0;
@@ -163,10 +163,148 @@ void ModbusRtuService::readRtuDeviceData(const JsonObject& deviceConfig) {
     modbus2->begin(slaveId, *serial2);
   }
   
-  for (JsonVariant regVar : registers) {
-    if (!running) break;
+  // Try batch reading for consecutive registers
+  bool processedRegisters[registers.size()];
+  for (int i = 0; i < registers.size(); i++) {
+    processedRegisters[i] = false;
+  }
+  
+  for (int i = 0; i < registers.size(); i++) {
+    if (!running || processedRegisters[i]) continue;
     
-    JsonObject reg = regVar.as<JsonObject>();
+    JsonObject reg = registers[i].as<JsonObject>();
+    uint8_t functionCode = reg["function_code"] | 3;
+    uint16_t startAddress = reg["address"] | 0;
+    String dataType = reg["data_type"] | "int16";
+    
+    // Calculate how many registers this data type needs
+    int regSize = 1;
+    if (dataType.startsWith("INT32") || dataType.startsWith("UINT32") || dataType.startsWith("FLOAT32")) {
+      regSize = 2;
+    } else if (dataType.startsWith("INT64") || dataType.startsWith("UINT64") || dataType.startsWith("DOUBLE64")) {
+      regSize = 4;
+    }
+    
+    // Find consecutive registers that can be read together
+    int totalRegisters = regSize;
+    int batchCount = 1;
+    
+    // Look for more registers that can be batched
+    for (int j = i + 1; j < registers.size(); j++) {
+      if (processedRegisters[j]) continue;
+      
+      JsonObject nextReg = registers[j].as<JsonObject>();
+      uint8_t nextFunctionCode = nextReg["function_code"] | 3;
+      uint16_t nextAddress = nextReg["address"] | 0;
+      String nextDataType = nextReg["data_type"] | "int16";
+      
+      int nextRegSize = 1;
+      if (nextDataType.startsWith("INT32") || nextDataType.startsWith("UINT32") || nextDataType.startsWith("FLOAT32")) {
+        nextRegSize = 2;
+      } else if (nextDataType.startsWith("INT64") || nextDataType.startsWith("UINT64") || nextDataType.startsWith("DOUBLE64")) {
+        nextRegSize = 4;
+      }
+      
+      // Check if this register is consecutive and same function code
+      if (nextFunctionCode == functionCode && nextAddress == (startAddress + totalRegisters)) {
+        totalRegisters += nextRegSize;
+        batchCount++;
+        if (totalRegisters > 50) break; // Increased batch size for large systems
+      }
+    }
+    
+    Serial.printf("[BATCH] Reading %d registers starting from %d (batch of %d register configs)\n", 
+                  totalRegisters, startAddress, batchCount);
+    
+    // Read the batch
+    uint16_t values[100]; // Max 100 registers per batch for large systems
+    if (readMultipleRegisters(modbus, functionCode, startAddress, totalRegisters, values)) {
+      // Process each register in the batch
+      int valueIndex = 0;
+      for (int k = i; k < registers.size() && valueIndex < totalRegisters; k++) {
+        if (processedRegisters[k]) continue;
+        
+        JsonObject batchReg = registers[k].as<JsonObject>();
+        uint16_t batchAddress = batchReg["address"] | 0;
+        
+        // Check if this register is in our current batch
+        if (batchAddress >= startAddress && batchAddress < (startAddress + totalRegisters)) {
+          processedRegisters[k] = true;
+          
+          String batchDataType = batchReg["data_type"] | "int16";
+          String batchRegisterName = batchReg["register_name"] | "Unknown";
+          
+          // Calculate offset in the batch
+          int offset = batchAddress - startAddress;
+          
+          // Process based on data type
+          if (batchDataType.startsWith("INT32") || batchDataType.startsWith("UINT32")) {
+            if (offset + 1 < totalRegisters) {
+              uint32_t combined;
+              Serial.printf("%s: Register[%d]=0x%04X (%d), Register[%d]=0x%04X (%d)\n", 
+                           batchDataType.c_str(), offset, values[offset], values[offset], 
+                           offset+1, values[offset + 1], values[offset + 1]);
+              
+              if (batchDataType.endsWith("_BE")) {
+                // Big Endian: High word first, Low word second
+                combined = ((uint32_t)values[offset] << 16) | values[offset + 1];
+                Serial.printf("BE: (0x%04X << 16) | 0x%04X = 0x%08X = %u\n", 
+                             values[offset], values[offset + 1], combined, combined);
+              } else if (batchDataType.endsWith("_LE")) {
+                // Little Endian: Low word first, High word second  
+                combined = ((uint32_t)values[offset + 1] << 16) | values[offset];
+                Serial.printf("LE: (0x%04X << 16) | 0x%04X = 0x%08X = %u\n", 
+                             values[offset + 1], values[offset], combined, combined);
+              } else if (batchDataType.endsWith("_LE_BS")) {
+                // Little Endian + Byte Swap
+                uint16_t word1 = ((values[offset] & 0xFF) << 8) | ((values[offset] & 0xFF00) >> 8);
+                uint16_t word2 = ((values[offset + 1] & 0xFF) << 8) | ((values[offset + 1] & 0xFF00) >> 8);
+                combined = ((uint32_t)word2 << 16) | word1;
+                Serial.printf("LE_BS: word1=0x%04X, word2=0x%04X, combined=0x%08X = %u\n", 
+                             word1, word2, combined, combined);
+              } else if (batchDataType.endsWith("_BE_BS")) {
+                // Big Endian + Byte Swap
+                uint16_t word1 = ((values[offset] & 0xFF) << 8) | ((values[offset] & 0xFF00) >> 8);
+                uint16_t word2 = ((values[offset + 1] & 0xFF) << 8) | ((values[offset + 1] & 0xFF00) >> 8);
+                combined = ((uint32_t)word1 << 16) | word2;
+                Serial.printf("BE_BS: word1=0x%04X, word2=0x%04X, combined=0x%08X = %u\n", 
+                             word1, word2, combined, combined);
+              } else {
+                // Default Big Endian
+                combined = ((uint32_t)values[offset] << 16) | values[offset + 1];
+                Serial.printf("Default BE: (0x%04X << 16) | 0x%04X = 0x%08X = %u\n", 
+                             values[offset], values[offset + 1], combined, combined);
+              }
+              
+              if (batchDataType.startsWith("INT32")) {
+                int32_t signedValue = (int32_t)combined;
+                storeInt32RegisterValue(deviceId, batchReg, signedValue);
+                Serial.printf("%s: %s = %d\n", deviceId.c_str(), batchRegisterName.c_str(), signedValue);
+              } else {
+                storeUint32RegisterValue(deviceId, batchReg, combined);
+                Serial.printf("%s: %s = %u\n", deviceId.c_str(), batchRegisterName.c_str(), combined);
+              }
+              valueIndex += 2;
+            }
+          } else {
+            // Single register types
+            float value = processRegisterValue(batchReg, values[offset]);
+            storeRegisterValue(deviceId, batchReg, value);
+            Serial.printf("%s: %s = %.2f\n", deviceId.c_str(), batchRegisterName.c_str(), value);
+            valueIndex += 1;
+          }
+        }
+      }
+    }
+    
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+  
+  // Process any remaining non-batched registers (fallback)
+  for (int i = 0; i < registers.size(); i++) {
+    if (!running || processedRegisters[i]) continue;
+    
+    JsonObject reg = registers[i].as<JsonObject>();
     uint8_t functionCode = reg["function_code"] | 3;
     uint16_t address = reg["address"] | 0;
     String registerName = reg["register_name"] | "Unknown";
@@ -204,11 +342,42 @@ void ModbusRtuService::readRtuDeviceData(const JsonObject& deviceConfig) {
       
       uint16_t values[4];
       if (readMultipleRegisters(modbus, functionCode, address, registerCount, values)) {
-        float value = (registerCount == 1) ? 
-                     processRegisterValue(reg, values[0]) : 
-                     processMultiRegisterValue(reg, values, registerCount);
-        storeRegisterValue(deviceId, reg, value);
-        Serial.printf("%s: %s = %.2f\n", deviceId.c_str(), registerName.c_str(), value);
+
+        
+        // Get original 32-bit value for large integers
+        String dataType = reg["data_type"] | "int16";
+        float value;
+        
+        if (registerCount == 1) {
+          value = processRegisterValue(reg, values[0]);
+        } else if (registerCount == 2 && (dataType.startsWith("INT32") || dataType.startsWith("UINT32"))) {
+          // For 32-bit integers, get the original value without float conversion
+          uint32_t combined;
+          if (dataType.endsWith("_BE")) {
+            combined = ((uint32_t)values[0] << 16) | values[1];
+          } else if (dataType.endsWith("_LE")) {
+            combined = ((uint32_t)values[1] << 16) | values[0];
+          } else {
+            combined = ((uint32_t)values[0] << 16) | values[1]; // Default BE
+          }
+          
+          if (dataType.startsWith("INT32")) {
+            int32_t signedValue = (int32_t)combined;
+
+            // Store as int32 without float conversion
+            storeInt32RegisterValue(deviceId, reg, signedValue);
+            return;
+          } else {
+
+            // Store as uint32 without float conversion  
+            storeUint32RegisterValue(deviceId, reg, combined);
+            return;
+          }
+        } else {
+          value = processMultiRegisterValue(reg, values, registerCount);
+          storeRegisterValue(deviceId, reg, value);
+          Serial.printf("%s: %s = %.2f\n", deviceId.c_str(), registerName.c_str(), value);
+        }
       } else {
         Serial.printf("%s: %s = ERROR\n", deviceId.c_str(), registerName.c_str());
       }
@@ -236,6 +405,70 @@ float ModbusRtuService::processRegisterValue(const JsonObject& reg, uint16_t raw
   return rawValue;
 }
 
+void ModbusRtuService::storeInt32RegisterValue(const String& deviceId, const JsonObject& reg, int32_t value) {
+  QueueManager* queueMgr = QueueManager::getInstance();
+  
+  DynamicJsonDocument dataDoc(256);
+  JsonObject dataPoint = dataDoc.to<JsonObject>();
+  
+  RTCManager* rtc = RTCManager::getInstance();
+  if (rtc) {
+    DateTime now = rtc->getCurrentTime();
+    dataPoint["time"] = now.unixtime();
+  } else {
+    dataPoint["time"] = millis();
+  }
+  dataPoint["name"] = reg["register_name"].as<String>();
+  dataPoint["address"] = reg["address"];
+  dataPoint["datatype"] = reg["data_type"].as<String>();
+  dataPoint["value"] = value; // Store as int32 directly
+  dataPoint["device_id"] = deviceId;
+  dataPoint["register_id"] = reg["register_id"].as<String>();
+  
+  Serial.printf("Data queued (INT32): %s = %d\n", dataPoint["name"].as<String>().c_str(), value);
+  
+  if (queueMgr) {
+    queueMgr->enqueue(dataPoint);
+  }
+  
+  String streamId = crudHandler ? crudHandler->getStreamDeviceId() : "";
+  if (!streamId.isEmpty() && streamId == deviceId && queueMgr) {
+    queueMgr->enqueueStream(dataPoint);
+  }
+}
+
+void ModbusRtuService::storeUint32RegisterValue(const String& deviceId, const JsonObject& reg, uint32_t value) {
+  QueueManager* queueMgr = QueueManager::getInstance();
+  
+  DynamicJsonDocument dataDoc(256);
+  JsonObject dataPoint = dataDoc.to<JsonObject>();
+  
+  RTCManager* rtc = RTCManager::getInstance();
+  if (rtc) {
+    DateTime now = rtc->getCurrentTime();
+    dataPoint["time"] = now.unixtime();
+  } else {
+    dataPoint["time"] = millis();
+  }
+  dataPoint["name"] = reg["register_name"].as<String>();
+  dataPoint["address"] = reg["address"];
+  dataPoint["datatype"] = reg["data_type"].as<String>();
+  dataPoint["value"] = value; // Store as uint32 directly
+  dataPoint["device_id"] = deviceId;
+  dataPoint["register_id"] = reg["register_id"].as<String>();
+  
+  Serial.printf("Data queued (UINT32): %s = %u\n", dataPoint["name"].as<String>().c_str(), value);
+  
+  if (queueMgr) {
+    queueMgr->enqueue(dataPoint);
+  }
+  
+  String streamId = crudHandler ? crudHandler->getStreamDeviceId() : "";
+  if (!streamId.isEmpty() && streamId == deviceId && queueMgr) {
+    queueMgr->enqueueStream(dataPoint);
+  }
+}
+
 void ModbusRtuService::storeRegisterValue(const String& deviceId, const JsonObject& reg, float value) {
   QueueManager* queueMgr = QueueManager::getInstance();
   
@@ -253,7 +486,9 @@ void ModbusRtuService::storeRegisterValue(const String& deviceId, const JsonObje
   dataPoint["name"] = reg["register_name"].as<String>();
   dataPoint["address"] = reg["address"];
   dataPoint["datatype"] = reg["data_type"].as<String>();
+  
   dataPoint["value"] = value;
+  
   dataPoint["device_id"] = deviceId;
   dataPoint["register_id"] = reg["register_id"].as<String>();
   
@@ -308,6 +543,12 @@ bool ModbusRtuService::readMultipleRegisters(ModbusMaster* modbus, uint8_t funct
 float ModbusRtuService::processMultiRegisterValue(const JsonObject& reg, uint16_t* values, int count) {
   String dataType = reg["data_type"];
   
+  // Debug: Print raw register values
+  Serial.printf("[DEBUG] DataType: %s, Count: %d\n", dataType.c_str(), count);
+  for (int i = 0; i < count; i++) {
+    Serial.printf("[DEBUG] Register[%d]: 0x%04X (%d)\n", i, values[i], values[i]);
+  }
+  
   if (count == 2) {
     uint32_t combined;
     if (dataType.endsWith("_BE")) {
@@ -324,12 +565,27 @@ float ModbusRtuService::processMultiRegisterValue(const JsonObject& reg, uint16_
       combined = ((uint32_t)values[0] << 16) | values[1]; // Default BE
     }
     
+    Serial.printf("[DEBUG] Combined: 0x%08X (%u)\n", combined, combined);
+    
     if (dataType.startsWith("INT32")) {
-      return (int32_t)combined;
+      int32_t result = (int32_t)combined;
+      Serial.printf("[DEBUG] INT32 result: %d\n", result);
+      // Check if value is too large for float precision
+      if (result > 16777216 || result < -16777216) {
+        Serial.printf("[WARNING] Value %d may lose precision when converted to float\n", result);
+      }
+      return (float)result;
     } else if (dataType.startsWith("UINT32")) {
-      return combined;
+      Serial.printf("[DEBUG] UINT32 result: %u\n", combined);
+      // Check if value is too large for float precision
+      if (combined > 16777216) {
+        Serial.printf("[WARNING] Value %u may lose precision when converted to float\n", combined);
+      }
+      return (float)combined;
     } else if (dataType.startsWith("FLOAT32")) {
-      return *(float*)&combined;
+      float result = *(float*)&combined;
+      Serial.printf("[DEBUG] FLOAT32 result: %.6f\n", result);
+      return result;
     }
   } else if (count == 4) {
     // 64-bit data types - return as double but cast to float for compatibility
