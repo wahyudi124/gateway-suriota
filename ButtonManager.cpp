@@ -77,9 +77,10 @@ void ButtonManager::enterConfigMode() {
   stopLedBlink();
   setLedSolid(true);
   
-  // Start BLE if available
-  if (bleManager && !bleManager->isAdvertising()) {
+  // Start BLE advertising
+  if (bleManager) {
     bleManager->startAdvertising();
+    Serial.println("BLE Advertising started for config mode");
   }
   
   Serial.println("Entered CONFIG MODE - BLE Active, LED Solid ON");
@@ -95,9 +96,10 @@ void ButtonManager::exitConfigMode() {
   setLedSolid(false);
   startLedBlink();
   
-  // Stop BLE if available
-  if (bleManager && bleManager->isAdvertising()) {
+  // Stop BLE advertising
+  if (bleManager) {
     bleManager->stopAdvertising();
+    Serial.println("BLE Advertising stopped for running mode");
   }
   
   clickCount = 0; // Reset click counter

@@ -73,6 +73,7 @@ void setup() {
   // Initialize Button Manager first
   buttonManager = ButtonManager::getInstance();
   buttonManager->begin();
+  Serial.println("ButtonManager initialized - BLE controlled by button");
   
   // Initialize configuration manager in PSRAM
   configManager = (ConfigManager*)heap_caps_malloc(sizeof(ConfigManager), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -232,7 +233,7 @@ void setup() {
   
   // CRUDHandler already initialized above
   
-  // Initialize BLE manager in PSRAM
+  // Initialize BLE manager in PSRAM but don't start advertising yet
   bleManager = (BLEManager*)heap_caps_malloc(sizeof(BLEManager), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (bleManager) {
     new(bleManager) BLEManager("SURIOTA GW", crudHandler);
@@ -250,7 +251,11 @@ void setup() {
     return;
   }
   
+  // BLE is initialized but not advertising - controlled by ButtonManager
+  
   Serial.println("BLE CRUD Manager started successfully");
+  Serial.println("System in RUNNING MODE - Press button 8+ seconds for CONFIG MODE");
+  Serial.printf("BLE Advertising: %s\n", bleManager->isAdvertising() ? "ACTIVE" : "INACTIVE");
 }
 
 void loop() {
