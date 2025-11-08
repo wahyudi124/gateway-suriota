@@ -62,41 +62,41 @@ void ServerConfig::createDefaultConfig() {
   comm["mac_address"] = "00:1A:2B:3C:4D:5E";
   
   JsonObject wifi = comm.createNestedObject("wifi");
-  wifi["ssid"] = "MyWiFiNetwork";
-  wifi["password"] = "MySecretPassword";
+  wifi["ssid"] = "SURIOTA_NETWORK";
+  wifi["password"] = "suriota123";
   
   // Protocol and data interval
   root["protocol"] = "mqtt";
   
   JsonObject dataInterval = root.createNestedObject("data_interval");
-  dataInterval["value"] = 1000;
+  dataInterval["value"] = 5000;
   dataInterval["unit"] = "ms";
   
   // MQTT config
   JsonObject mqtt = root.createNestedObject("mqtt_config");
   mqtt["enabled"] = true;
-  mqtt["broker_address"] = "demo.thingsboard.io";
+  mqtt["broker_address"] = "broker.hivemq.com";
   mqtt["broker_port"] = 1883;
-  mqtt["client_id"] = "esp32_device";
-  mqtt["username"] = "device_token";
-  mqtt["password"] = "device_password";
-  mqtt["topic_publish"] = "v1/devices/me/telemetry";
-  mqtt["topic_subscribe"] = "device/control";
+  mqtt["client_id"] = "suriota_gateway_001";
+  mqtt["username"] = "suriota_user";
+  mqtt["password"] = "suriota_pass";
+  mqtt["topic_publish"] = "suriota/gateway/data";
+  mqtt["topic_subscribe"] = "suriota/gateway/control";
   mqtt["keep_alive"] = 60;
   mqtt["clean_session"] = true;
   mqtt["use_tls"] = false;
   
   // HTTP config
   JsonObject http = root.createNestedObject("http_config");
-  http["enabled"] = true;
-  http["endpoint_url"] = "https://api.example.com/data";
+  http["enabled"] = false;
+  http["endpoint_url"] = "https://api.suriota.com/data";
   http["method"] = "POST";
   http["body_format"] = "json";
-  http["timeout"] = 5000;
+  http["timeout"] = 10000;
   http["retry"] = 3;
   
   JsonObject headers = http.createNestedObject("headers");
-  headers["Authorization"] = "Bearer token";
+  headers["Authorization"] = "Bearer suriota_token";
   headers["Content-Type"] = "application/json";
 }
 

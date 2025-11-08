@@ -17,8 +17,8 @@ bool LoggingConfig::begin() {
 
 void LoggingConfig::createDefaultConfig() {
   config.clear();
-  config["logging_ret"] = "1w";
-  config["logging_interval"] = "5m";
+  config["logging_ret"] = "1m";
+  config["logging_interval"] = "10m";
 }
 
 bool LoggingConfig::saveConfig() {
