@@ -17,9 +17,11 @@ private:
   TaskHandle_t ledTaskHandle;
   
   static void ledBlinkTask(void* parameter);
+  static void delayedButtonInit(void* parameter);
   void startLedBlink();
   void stopLedBlink();
   void setLedSolid(bool on);
+  void initButton();
   
   static void handleClick();
   static void handleLongPressStart();
