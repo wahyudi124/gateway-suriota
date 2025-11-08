@@ -238,7 +238,7 @@ void ModbusRtuService::readRtuDeviceData(const JsonObject& deviceConfig) {
           int offset = batchAddress - startAddress;
           
           // Process based on data type
-          if (batchDataType.startsWith("INT32") || batchDataType.startsWith("UINT32")) {
+          if (batchDataType.startsWith("INT32") || batchDataType.startsWith("UINT32") || batchDataType.startsWith("FLOAT32")) {
             if (offset + 1 < totalRegisters) {
               uint32_t combined;
               Serial.printf("%s: Register[%d]=0x%04X (%d), Register[%d]=0x%04X (%d)\n", 
@@ -277,9 +277,13 @@ void ModbusRtuService::readRtuDeviceData(const JsonObject& deviceConfig) {
                 int32_t signedValue = (int32_t)combined;
                 storeInt32RegisterValue(deviceId, batchReg, signedValue);
                 Serial.printf("INT32_%s = %d\n", batchDataType.substring(5).c_str(), signedValue);
-              } else {
+              } else if (batchDataType.startsWith("UINT32")) {
                 storeUint32RegisterValue(deviceId, batchReg, combined);
                 Serial.printf("UINT32_%s = %u\n", batchDataType.substring(6).c_str(), combined);
+              } else if (batchDataType.startsWith("FLOAT32")) {
+                float floatValue = *(float*)&combined;
+                storeRegisterValue(deviceId, batchReg, floatValue);
+                Serial.printf("FLOAT32_%s = %.6f\n", batchDataType.substring(7).c_str(), floatValue);
               }
               valueIndex += 2;
             }
@@ -287,7 +291,16 @@ void ModbusRtuService::readRtuDeviceData(const JsonObject& deviceConfig) {
             // Single register types
             float value = processRegisterValue(batchReg, values[offset]);
             storeRegisterValue(deviceId, batchReg, value);
-            Serial.printf("%s: %s = %.2f\n", deviceId.c_str(), batchRegisterName.c_str(), value);
+            String dataType = batchReg["data_type"] | "int16";
+            if (dataType == "int16") {
+              Serial.printf("int16 = %d\n", (int16_t)value);
+            } else if (dataType == "uint16") {
+              Serial.printf("uint16 = %u\n", (uint16_t)value);
+            } else if (dataType == "bool") {
+              Serial.printf("bool = %s\n", value != 0 ? "true" : "false");
+            } else {
+              Serial.printf("%s = %.2f\n", dataType.c_str(), value);
+            }
             valueIndex += 1;
           }
         }
