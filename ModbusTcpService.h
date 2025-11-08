@@ -46,6 +46,8 @@ private:
   float processRegisterValue(const JsonObject& reg, uint16_t rawValue);
   float processMultiRegisterValue(const JsonObject& reg, uint16_t* values, int count);
   void storeRegisterValue(const String& deviceId, const JsonObject& reg, float value);
+  void storeInt32RegisterValue(const String& deviceId, const JsonObject& reg, int32_t value);
+  void storeUint32RegisterValue(const String& deviceId, const JsonObject& reg, uint32_t value);
 
 public:
   ModbusTcpService(ConfigManager* config, EthernetManager* ethernet);
