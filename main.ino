@@ -6,8 +6,24 @@
  * Features: CRUD operations, fragmentation, FreeRTOS tasks
  */
 
-
-
+#include "BLEManager.h"
+#include "CRUDHandler.h"
+#include "ConfigManager.h"
+#include "ServerConfig.h"
+#include "LoggingConfig.h"
+#include "NetworkManager.h"
+#include "RTCManager.h"
+#include "ModbusTcpService.h"
+#include "ModbusRtuService.h"
+#include "QueueManager.h"
+#include "MqttManager.h"
+#include "HttpManager.h"
+#include "SDLogger.h"
+#include "ButtonManager.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <esp_heap_caps.h>
+#include <esp_psram.h>
 
 // Add missing include
 #include <new>
