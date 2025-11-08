@@ -20,6 +20,8 @@ private:
   void handleCreate(BLEManager* manager, const String& type, const JsonDocument& command);
   void handleUpdate(BLEManager* manager, const String& type, const JsonDocument& command);
   void handleDelete(BLEManager* manager, const String& type, const JsonDocument& command);
+  
+  void clearStreamDeviceId() { streamDeviceId = ""; }
 
 public:
   CRUDHandler(ConfigManager* config, ServerConfig* serverCfg, LoggingConfig* loggingCfg);

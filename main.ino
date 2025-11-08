@@ -19,6 +19,7 @@
 #include "MqttManager.h"
 #include "HttpManager.h"
 #include "SDLogger.h"
+#include "ButtonManager.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_heap_caps.h>
@@ -41,6 +42,7 @@ QueueManager* queueManager = nullptr;
 MqttManager* mqttManager = nullptr;
 HttpManager* httpManager = nullptr;
 SDLogger* sdLogger = nullptr;
+ButtonManager* buttonManager = nullptr;
 
 // Cleanup function for failed initialization
 void cleanup() {
@@ -68,6 +70,10 @@ void setup() {
   
   Serial.println("Starting BLE CRUD Manager...");
   
+  // Initialize Button Manager first
+  buttonManager = ButtonManager::getInstance();
+  buttonManager->begin();
+  
   // Initialize configuration manager in PSRAM
   configManager = (ConfigManager*)heap_caps_malloc(sizeof(ConfigManager), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (configManager) {
@@ -90,7 +96,7 @@ void setup() {
   configManager->debugDevicesFile();
 
     // Force clear all cache and reload
-  configManager->clearAllConfigurations();
+  //configManager->clearAllConfigurations();
   
   // Create test device if no valid devices exist
 
@@ -248,8 +254,13 @@ void setup() {
 }
 
 void loop() {
+  // Handle button events
+  if (buttonManager) {
+    buttonManager->tick();
+  }
+  
   // FreeRTOS-friendly delay - yields to other tasks
-  vTaskDelay(pdMS_TO_TICKS(100));
+  vTaskDelay(pdMS_TO_TICKS(10));
   
   // Optional: Add watchdog feed or system monitoring here
   // esp_task_wdt_reset();

@@ -45,13 +45,13 @@ bool BLEManager::begin() {
   // Start service
   pService->start();
   
-  // Start advertising
+  // Setup advertising but don't start yet
   BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->setScanResponse(true);
   pAdvertising->setMinPreferred(0x06);
   pAdvertising->setMinPreferred(0x12);
-  BLEDevice::startAdvertising();
+  // Don't start advertising automatically
   
   // Create command processing task with PSRAM stack
   xTaskCreatePinnedToCore(
@@ -114,7 +114,7 @@ void BLEManager::onDisconnect(BLEServer* pServer) {
     Serial.println("Cleared streaming on disconnect");
   }
   
-  BLEDevice::startAdvertising(); // Restart advertising
+  // Don't auto-restart advertising
 }
 
 void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
@@ -230,6 +230,20 @@ void BLEManager::sendFragmented(const String& data) {
   // Send end marker
   pResponseChar->setValue("<END>");
   pResponseChar->notify();
+}
+
+void BLEManager::startAdvertising() {
+  BLEDevice::startAdvertising();
+  Serial.println("BLE Advertising started");
+}
+
+void BLEManager::stopAdvertising() {
+  BLEDevice::stopAdvertising();
+  Serial.println("BLE Advertising stopped");
+}
+
+bool BLEManager::isAdvertising() {
+  return BLEDevice::getAdvertising()->isAdvertising();
 }
 
 void BLEManager::streamingTask(void* parameter) {

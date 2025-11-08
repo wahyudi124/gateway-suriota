@@ -55,6 +55,11 @@ public:
   bool begin();
   void stop();
   
+  // Advertising control
+  void startAdvertising();
+  void stopAdvertising();
+  bool isAdvertising();
+  
   // Response methods
   void sendResponse(const JsonDocument& data);
   void sendError(const String& message);
