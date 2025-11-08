@@ -145,7 +145,6 @@ void ModbusTcpService::readTcpDeviceData(const JsonObject& deviceConfig) {
   }
   
   Serial.printf("Reading Ethernet device %s at %s:%d\n", deviceId.c_str(), ip.c_str(), port);
-  Serial.printf("Ethernet available: %s\n", ethernetManager->isAvailable() ? "YES" : "NO");
   
   for (JsonVariant regVar : registers) {
     if (!running) break;
@@ -154,6 +153,7 @@ void ModbusTcpService::readTcpDeviceData(const JsonObject& deviceConfig) {
     uint8_t functionCode = reg["function_code"] | 3;
     uint16_t address = reg["address"] | 0;
     String registerName = reg["register_name"] | "Unknown";
+    String dataType = reg["data_type"] | "int16";
     
     if (functionCode == 1 || functionCode == 2) {
       // Read coils/discrete inputs
@@ -161,13 +161,12 @@ void ModbusTcpService::readTcpDeviceData(const JsonObject& deviceConfig) {
       if (readModbusCoil(ip, port, slaveId, address, &result)) {
         float value = result ? 1.0 : 0.0;
         storeRegisterValue(deviceId, reg, value);
-        Serial.printf("%s: %s = %.0f\n", deviceId.c_str(), registerName.c_str(), value);
+        Serial.printf("bool = %s\n", result ? "true" : "false");
       } else {
         Serial.printf("%s: %s = ERROR\n", deviceId.c_str(), registerName.c_str());
       }
     } else {
       // Read registers
-      String dataType = reg["data_type"] | "int16";
       int registerCount = 1;
       
       // Determine register count based on data type
@@ -179,17 +178,74 @@ void ModbusTcpService::readTcpDeviceData(const JsonObject& deviceConfig) {
       
       uint16_t results[4];
       if (readModbusRegisters(ip, port, slaveId, functionCode, address, registerCount, results)) {
-        float value = (registerCount == 1) ? 
-                     processRegisterValue(reg, results[0]) : 
-                     processMultiRegisterValue(reg, results, registerCount);
-        storeRegisterValue(deviceId, reg, value);
-        Serial.printf("%s: %s = %.2f\n", deviceId.c_str(), registerName.c_str(), value);
+        if (registerCount == 1) {
+          float value = processRegisterValue(reg, results[0]);
+          storeRegisterValue(deviceId, reg, value);
+          if (dataType == "int16") {
+            Serial.printf("int16 = %d\n", (int16_t)value);
+          } else if (dataType == "uint16") {
+            Serial.printf("uint16 = %u\n", (uint16_t)value);
+          } else {
+            Serial.printf("%s = %.2f\n", dataType.c_str(), value);
+          }
+        } else if (registerCount == 2 && (dataType.startsWith("INT32") || dataType.startsWith("UINT32"))) {
+          uint32_t combined;
+          if (dataType.endsWith("_BE")) {
+            combined = ((uint32_t)results[0] << 16) | results[1];
+          } else if (dataType.endsWith("_LE")) {
+            combined = ((uint32_t)results[1] << 16) | results[0];
+          } else if (dataType.endsWith("_LE_BS")) {
+            uint16_t word1 = ((results[0] & 0xFF) << 8) | ((results[0] & 0xFF00) >> 8);
+            uint16_t word2 = ((results[1] & 0xFF) << 8) | ((results[1] & 0xFF00) >> 8);
+            combined = ((uint32_t)word2 << 16) | word1;
+          } else if (dataType.endsWith("_BE_BS")) {
+            uint16_t word1 = ((results[0] & 0xFF) << 8) | ((results[0] & 0xFF00) >> 8);
+            uint16_t word2 = ((results[1] & 0xFF) << 8) | ((results[1] & 0xFF00) >> 8);
+            combined = ((uint32_t)word1 << 16) | word2;
+          } else {
+            combined = ((uint32_t)results[0] << 16) | results[1]; // Default BE
+          }
+          
+          if (dataType.startsWith("INT32")) {
+            int32_t signedValue = (int32_t)combined;
+            storeInt32RegisterValue(deviceId, reg, signedValue);
+            Serial.printf("INT32_%s = %d\n", dataType.substring(5).c_str(), signedValue);
+          } else {
+            storeUint32RegisterValue(deviceId, reg, combined);
+            Serial.printf("UINT32_%s = %u\n", dataType.substring(6).c_str(), combined);
+          }
+        } else if (registerCount == 2 && dataType.startsWith("FLOAT32")) {
+          uint32_t combined;
+          if (dataType.endsWith("_BE")) {
+            combined = ((uint32_t)results[0] << 16) | results[1];
+          } else if (dataType.endsWith("_LE")) {
+            combined = ((uint32_t)results[1] << 16) | results[0];
+          } else if (dataType.endsWith("_LE_BS")) {
+            uint16_t word1 = ((results[0] & 0xFF) << 8) | ((results[0] & 0xFF00) >> 8);
+            uint16_t word2 = ((results[1] & 0xFF) << 8) | ((results[1] & 0xFF00) >> 8);
+            combined = ((uint32_t)word2 << 16) | word1;
+          } else if (dataType.endsWith("_BE_BS")) {
+            uint16_t word1 = ((results[0] & 0xFF) << 8) | ((results[0] & 0xFF00) >> 8);
+            uint16_t word2 = ((results[1] & 0xFF) << 8) | ((results[1] & 0xFF00) >> 8);
+            combined = ((uint32_t)word1 << 16) | word2;
+          } else {
+            combined = ((uint32_t)results[0] << 16) | results[1]; // Default BE
+          }
+          
+          float floatValue = *(float*)&combined;
+          storeRegisterValue(deviceId, reg, floatValue);
+          Serial.printf("FLOAT32_%s = %.6f\n", dataType.substring(7).c_str(), floatValue);
+        } else {
+          float value = processMultiRegisterValue(reg, results, registerCount);
+          storeRegisterValue(deviceId, reg, value);
+          Serial.printf("%s = %.2f\n", dataType.c_str(), value);
+        }
       } else {
         Serial.printf("%s: %s = ERROR\n", deviceId.c_str(), registerName.c_str());
       }
     }
     
-    vTaskDelay(pdMS_TO_TICKS(50)); // Small delay between registers
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
 
@@ -446,10 +502,9 @@ float ModbusTcpService::processRegisterValue(const JsonObject& reg, uint16_t raw
   return rawValue;
 }
 
-void ModbusTcpService::storeRegisterValue(const String& deviceId, const JsonObject& reg, float value) {
+void ModbusTcpService::storeInt32RegisterValue(const String& deviceId, const JsonObject& reg, int32_t value) {
   QueueManager* queueMgr = QueueManager::getInstance();
   
-  // Create data point in required format
   DynamicJsonDocument dataDoc(256);
   JsonObject dataPoint = dataDoc.to<JsonObject>();
   
@@ -467,16 +522,72 @@ void ModbusTcpService::storeRegisterValue(const String& deviceId, const JsonObje
   dataPoint["device_id"] = deviceId;
   dataPoint["register_id"] = reg["register_id"].as<String>();
   
-  // Add to message queue
-  queueMgr->enqueue(dataPoint);
+  if (queueMgr) {
+    queueMgr->enqueue(dataPoint);
+  }
   
-  // Check if this device is being streamed
   String streamId = crudHandler ? crudHandler->getStreamDeviceId() : "";
-  Serial.printf("TCP: Device %s, StreamID '%s', Match: %s\n", 
-                deviceId.c_str(), streamId.c_str(), 
-                (streamId == deviceId) ? "YES" : "NO");
-  if (!streamId.isEmpty() && streamId == deviceId) {
-    Serial.printf("Streaming data for device %s\n", deviceId.c_str());
+  if (!streamId.isEmpty() && streamId == deviceId && queueMgr) {
+    queueMgr->enqueueStream(dataPoint);
+  }
+}
+
+void ModbusTcpService::storeUint32RegisterValue(const String& deviceId, const JsonObject& reg, uint32_t value) {
+  QueueManager* queueMgr = QueueManager::getInstance();
+  
+  DynamicJsonDocument dataDoc(256);
+  JsonObject dataPoint = dataDoc.to<JsonObject>();
+  
+  RTCManager* rtc = RTCManager::getInstance();
+  if (rtc) {
+    DateTime now = rtc->getCurrentTime();
+    dataPoint["time"] = now.unixtime();
+  } else {
+    dataPoint["time"] = millis();
+  }
+  dataPoint["name"] = reg["register_name"].as<String>();
+  dataPoint["address"] = reg["address"];
+  dataPoint["datatype"] = reg["data_type"].as<String>();
+  dataPoint["value"] = value;
+  dataPoint["device_id"] = deviceId;
+  dataPoint["register_id"] = reg["register_id"].as<String>();
+  
+  if (queueMgr) {
+    queueMgr->enqueue(dataPoint);
+  }
+  
+  String streamId = crudHandler ? crudHandler->getStreamDeviceId() : "";
+  if (!streamId.isEmpty() && streamId == deviceId && queueMgr) {
+    queueMgr->enqueueStream(dataPoint);
+  }
+}
+
+void ModbusTcpService::storeRegisterValue(const String& deviceId, const JsonObject& reg, float value) {
+  QueueManager* queueMgr = QueueManager::getInstance();
+  
+  DynamicJsonDocument dataDoc(256);
+  JsonObject dataPoint = dataDoc.to<JsonObject>();
+  
+  RTCManager* rtc = RTCManager::getInstance();
+  if (rtc) {
+    DateTime now = rtc->getCurrentTime();
+    dataPoint["time"] = now.unixtime();
+  } else {
+    dataPoint["time"] = millis();
+  }
+  dataPoint["name"] = reg["register_name"].as<String>();
+  dataPoint["address"] = reg["address"];
+  dataPoint["datatype"] = reg["data_type"].as<String>();
+  dataPoint["value"] = value;
+  dataPoint["device_id"] = deviceId;
+  dataPoint["register_id"] = reg["register_id"].as<String>();
+  
+  if (queueMgr) {
+    queueMgr->enqueue(dataPoint);
+  }
+  
+  String streamId = crudHandler ? crudHandler->getStreamDeviceId() : "";
+  if (!streamId.isEmpty() && streamId == deviceId && queueMgr) {
     queueMgr->enqueueStream(dataPoint);
   }
 }
