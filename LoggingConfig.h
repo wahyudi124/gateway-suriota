@@ -26,6 +26,7 @@ public:
   // Specific getters
   String getLoggingRetention();
   String getLoggingInterval();
+  unsigned long getRetentionMillis();
 };
 
 #endif

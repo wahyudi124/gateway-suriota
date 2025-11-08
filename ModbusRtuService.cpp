@@ -2,8 +2,10 @@
 #include "QueueManager.h"
 #include "CRUDHandler.h"
 #include "RTCManager.h"
+#include "SDLogger.h"
 
 extern CRUDHandler* crudHandler;
+extern SDLogger* sdLogger;
 
 ModbusRtuService::ModbusRtuService(ConfigManager* config) 
   : configManager(config), running(false), taskHandle(nullptr), 
@@ -441,6 +443,11 @@ void ModbusRtuService::storeInt32RegisterValue(const String& deviceId, const Jso
     queueMgr->enqueue(dataPoint);
   }
   
+  // Log to SD card
+  if (sdLogger) {
+    sdLogger->logRegisterData(dataPoint["name"].as<String>(), value);
+  }
+  
   String streamId = crudHandler ? crudHandler->getStreamDeviceId() : "";
   if (!streamId.isEmpty() && streamId == deviceId && queueMgr) {
     queueMgr->enqueueStream(dataPoint);
@@ -471,6 +478,11 @@ void ModbusRtuService::storeUint32RegisterValue(const String& deviceId, const Js
   
   if (queueMgr) {
     queueMgr->enqueue(dataPoint);
+  }
+  
+  // Log to SD card
+  if (sdLogger) {
+    sdLogger->logRegisterData(dataPoint["name"].as<String>(), value);
   }
   
   String streamId = crudHandler ? crudHandler->getStreamDeviceId() : "";
@@ -507,6 +519,11 @@ void ModbusRtuService::storeRegisterValue(const String& deviceId, const JsonObje
   // Add to message queue
   if (queueMgr) {
     queueMgr->enqueue(dataPoint);
+  }
+  
+  // Log to SD card
+  if (sdLogger) {
+    sdLogger->logRegisterData(dataPoint["name"].as<String>(), value);
   }
   
   // Check if this device is being streamed

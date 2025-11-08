@@ -2,8 +2,10 @@
 #include "QueueManager.h"
 #include "CRUDHandler.h"
 #include "RTCManager.h"
+#include "SDLogger.h"
 
 extern CRUDHandler* crudHandler;
+extern SDLogger* sdLogger;
 
 uint16_t ModbusTcpService::transactionCounter = 1;
 
@@ -526,6 +528,11 @@ void ModbusTcpService::storeInt32RegisterValue(const String& deviceId, const Jso
     queueMgr->enqueue(dataPoint);
   }
   
+  // Log to SD card
+  if (sdLogger) {
+    sdLogger->logRegisterData(dataPoint["name"].as<String>(), value);
+  }
+  
   String streamId = crudHandler ? crudHandler->getStreamDeviceId() : "";
   if (!streamId.isEmpty() && streamId == deviceId && queueMgr) {
     queueMgr->enqueueStream(dataPoint);
@@ -556,6 +563,11 @@ void ModbusTcpService::storeUint32RegisterValue(const String& deviceId, const Js
     queueMgr->enqueue(dataPoint);
   }
   
+  // Log to SD card
+  if (sdLogger) {
+    sdLogger->logRegisterData(dataPoint["name"].as<String>(), value);
+  }
+  
   String streamId = crudHandler ? crudHandler->getStreamDeviceId() : "";
   if (!streamId.isEmpty() && streamId == deviceId && queueMgr) {
     queueMgr->enqueueStream(dataPoint);
@@ -584,6 +596,11 @@ void ModbusTcpService::storeRegisterValue(const String& deviceId, const JsonObje
   
   if (queueMgr) {
     queueMgr->enqueue(dataPoint);
+  }
+  
+  // Log to SD card
+  if (sdLogger) {
+    sdLogger->logRegisterData(dataPoint["name"].as<String>(), value);
   }
   
   String streamId = crudHandler ? crudHandler->getStreamDeviceId() : "";

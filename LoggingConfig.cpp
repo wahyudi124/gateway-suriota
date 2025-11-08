@@ -93,3 +93,15 @@ String LoggingConfig::getLoggingRetention() {
 String LoggingConfig::getLoggingInterval() {
   return config["logging_interval"] | "5m";
 }
+
+unsigned long LoggingConfig::getRetentionMillis() {
+  String ret = getLoggingRetention();
+  if (ret == "1w") {
+    return 7 * 24 * 60 * 60 * 1000UL;  // 1 week
+  } else if (ret == "1m") {
+    return 30 * 24 * 60 * 60 * 1000UL; // 1 month
+  } else if (ret == "3m") {
+    return 90 * 24 * 60 * 60 * 1000UL; // 3 months
+  }
+  return 7 * 24 * 60 * 60 * 1000UL;   // Default 1 week
+}

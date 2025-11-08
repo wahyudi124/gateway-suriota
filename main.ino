@@ -18,6 +18,7 @@
 #include "QueueManager.h"
 #include "MqttManager.h"
 #include "HttpManager.h"
+#include "SDLogger.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_heap_caps.h>
@@ -39,6 +40,7 @@ ModbusRtuService* modbusRtuService = nullptr;
 QueueManager* queueManager = nullptr;
 MqttManager* mqttManager = nullptr;
 HttpManager* httpManager = nullptr;
+SDLogger* sdLogger = nullptr;
 
 // Cleanup function for failed initialization
 void cleanup() {
@@ -49,6 +51,7 @@ void cleanup() {
   if (modbusRtuService) delete modbusRtuService;
   if (crudHandler) { crudHandler->~CRUDHandler(); heap_caps_free(crudHandler); }
   if (bleManager) { bleManager->~BLEManager(); heap_caps_free(bleManager); }
+  if (sdLogger) delete sdLogger;
 }
 
 void setup() {
@@ -146,6 +149,14 @@ void setup() {
     Serial.println("Failed to initialize RTCManager");
   } else {
     rtcManager->startSync();
+  }
+  
+  // Initialize SD Logger
+  sdLogger = new SDLogger(loggingConfig, rtcManager);
+  if (!sdLogger || !sdLogger->begin()) {
+    Serial.println("Failed to initialize SDLogger");
+  } else {
+    Serial.println("SDLogger initialized successfully");
   }
   
   // Initialize Modbus TCP service
