@@ -248,13 +248,11 @@ void ModbusRtuService::readRtuDeviceData(const JsonObject& deviceConfig) {
               if (batchDataType.endsWith("_BE")) {
                 // Big Endian: High word first, Low word second
                 combined = ((uint32_t)values[offset] << 16) | values[offset + 1];
-                Serial.printf("BE: (0x%04X << 16) | 0x%04X = 0x%08X = %u\n", 
-                             values[offset], values[offset + 1], combined, combined);
+                Serial.printf("UINT32_BE = %u\n", combined);
               } else if (batchDataType.endsWith("_LE")) {
                 // Little Endian: Low word first, High word second  
                 combined = ((uint32_t)values[offset + 1] << 16) | values[offset];
-                Serial.printf("LE: (0x%04X << 16) | 0x%04X = 0x%08X = %u\n", 
-                             values[offset + 1], values[offset], combined, combined);
+                Serial.printf("UINT32_LE = %u\n", combined);
               } else if (batchDataType.endsWith("_LE_BS")) {
                 // Little Endian + Byte Swap
                 uint16_t word1 = ((values[offset] & 0xFF) << 8) | ((values[offset] & 0xFF00) >> 8);
@@ -272,17 +270,16 @@ void ModbusRtuService::readRtuDeviceData(const JsonObject& deviceConfig) {
               } else {
                 // Default Big Endian
                 combined = ((uint32_t)values[offset] << 16) | values[offset + 1];
-                Serial.printf("Default BE: (0x%04X << 16) | 0x%04X = 0x%08X = %u\n", 
-                             values[offset], values[offset + 1], combined, combined);
+                Serial.printf("UINT32_BE = %u\n", combined);
               }
               
               if (batchDataType.startsWith("INT32")) {
                 int32_t signedValue = (int32_t)combined;
                 storeInt32RegisterValue(deviceId, batchReg, signedValue);
-                Serial.printf("%s: %s = %d\n", deviceId.c_str(), batchRegisterName.c_str(), signedValue);
+                Serial.printf("INT32_%s = %d\n", batchDataType.substring(5).c_str(), signedValue);
               } else {
                 storeUint32RegisterValue(deviceId, batchReg, combined);
-                Serial.printf("%s: %s = %u\n", deviceId.c_str(), batchRegisterName.c_str(), combined);
+                Serial.printf("UINT32_%s = %u\n", batchDataType.substring(6).c_str(), combined);
               }
               valueIndex += 2;
             }
