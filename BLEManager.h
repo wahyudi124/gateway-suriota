@@ -38,6 +38,7 @@ private:
   QueueHandle_t commandQueue;
   TaskHandle_t commandTaskHandle;
   TaskHandle_t streamTaskHandle;
+  bool advertisingActive;
   
   // FreeRTOS task functions
   static void commandProcessingTask(void* parameter);

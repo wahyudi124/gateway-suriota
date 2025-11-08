@@ -5,7 +5,7 @@
 #include <new>
 
 BLEManager::BLEManager(const String& name, CRUDHandler* cmdHandler) 
-  : serviceName(name), handler(cmdHandler), processing(false), streamTaskHandle(nullptr) {
+  : serviceName(name), handler(cmdHandler), processing(false), streamTaskHandle(nullptr), advertisingActive(false) {
   commandBuffer.reserve(COMMAND_BUFFER_SIZE);
   commandQueue = xQueueCreate(20, sizeof(String*));  // Increased queue size
 }
@@ -234,16 +234,18 @@ void BLEManager::sendFragmented(const String& data) {
 
 void BLEManager::startAdvertising() {
   BLEDevice::startAdvertising();
+  advertisingActive = true;
   Serial.println("BLE Advertising started");
 }
 
 void BLEManager::stopAdvertising() {
   BLEDevice::stopAdvertising();
+  advertisingActive = false;
   Serial.println("BLE Advertising stopped");
 }
 
 bool BLEManager::isAdvertising() {
-  return BLEDevice::getAdvertising()->isAdvertising();
+  return advertisingActive;
 }
 
 void BLEManager::streamingTask(void* parameter) {
