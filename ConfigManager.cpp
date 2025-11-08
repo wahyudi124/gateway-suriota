@@ -309,7 +309,7 @@ String ConfigManager::createRegister(const String& deviceId, JsonObjectConst con
     address = config["address"].as<int>();
   }
   
-  if (address <= 0) {
+  if (address < 0) {
     Serial.printf("Invalid address: %d\n", address);
     return "";
   }
