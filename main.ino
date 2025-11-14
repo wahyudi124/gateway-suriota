@@ -27,6 +27,18 @@
 // Add missing include
 #include <new>
 
+// Button and LED pins
+#define CONFIG_BUTTON_PIN 0
+#define STATUS_LED_PIN 7
+
+// Button state variables
+volatile unsigned long buttonPressTime = 0;
+volatile unsigned long buttonReleaseTime = 0;
+volatile int clickCount = 0;
+volatile unsigned long lastClickTime = 0;
+volatile bool buttonPressed = false;
+bool bleConfigMode = false;
+
 // Global objects - initialized to nullptr for safety
 BLEManager* bleManager = nullptr;
 CRUDHandler* crudHandler = nullptr;
@@ -54,9 +66,84 @@ void cleanup() {
   if (sdLogger) delete sdLogger;
 }
 
+void IRAM_ATTR buttonISR() {
+  unsigned long now = millis();
+  bool currentState = digitalRead(CONFIG_BUTTON_PIN);
+  
+  if (currentState == LOW && !buttonPressed) {
+    buttonPressed = true;
+    buttonPressTime = now;
+  } else if (currentState == HIGH && buttonPressed) {
+    buttonPressed = false;
+    buttonReleaseTime = now;
+    
+    unsigned long pressDuration = buttonReleaseTime - buttonPressTime;
+    
+    if (pressDuration < 8000) {
+      if (now - lastClickTime < 1000) {
+        clickCount++;
+      } else {
+        clickCount = 1;
+      }
+      lastClickTime = now;
+    }
+  }
+}
+
+void checkButtonAction() {
+  unsigned long now = millis();
+  
+  // Check for long press (>8 seconds)
+  if (buttonPressed && (now - buttonPressTime > 8000) && !bleConfigMode) {
+    bleConfigMode = true;
+    if (bleManager) {
+      bleManager->begin();
+      digitalWrite(STATUS_LED_PIN, HIGH);
+      Serial.println("BLE Config Mode: ACTIVE");
+    }
+    buttonPressed = false;
+  }
+  
+  // Check for triple click
+  if (clickCount >= 3 && (now - lastClickTime > 500) && bleConfigMode) {
+    bleConfigMode = false;
+    if (bleManager) {
+      bleManager->stop();
+      Serial.println("BLE Config Mode: INACTIVE");
+    }
+    clickCount = 0;
+  }
+  
+  // Reset click count after timeout
+  if (clickCount > 0 && (now - lastClickTime > 1000)) {
+    clickCount = 0;
+  }
+}
+
+void ledStatusTask(void* parameter) {
+  while (true) {
+    if (bleConfigMode) {
+      digitalWrite(STATUS_LED_PIN, HIGH);
+    } else {
+      digitalWrite(STATUS_LED_PIN, !digitalRead(STATUS_LED_PIN));
+      vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   vTaskDelay(pdMS_TO_TICKS(1000));
+  
+  // Initialize button and LED
+  pinMode(CONFIG_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  digitalWrite(STATUS_LED_PIN, LOW);
+  attachInterrupt(digitalPinToInterrupt(CONFIG_BUTTON_PIN), buttonISR, CHANGE);
+  
+  // Start LED status task
+  xTaskCreate(ledStatusTask, "LED_Status", 2048, NULL, 1, NULL);
   
   // Check PSRAM availability
   if (esp_psram_is_initialized()) {
@@ -226,7 +313,7 @@ void setup() {
   
   // CRUDHandler already initialized above
   
-  // Initialize BLE manager in PSRAM
+  // Initialize BLE manager in PSRAM (but don't start yet)
   bleManager = (BLEManager*)heap_caps_malloc(sizeof(BLEManager), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (bleManager) {
     new(bleManager) BLEManager("SURIOTA GW", crudHandler);
@@ -238,16 +325,15 @@ void setup() {
       return;
     }
   }
-  if (!bleManager->begin()) {
-    Serial.println("Failed to initialize BLE Manager");
-    cleanup();
-    return;
-  }
+  // BLE will be started by button press
+  Serial.println("BLE Manager ready (press config button >8s to activate)");
   
   Serial.println("BLE CRUD Manager started successfully");
 }
 
 void loop() {
+  checkButtonAction();
+  
   // FreeRTOS-friendly delay - yields to other tasks
   vTaskDelay(pdMS_TO_TICKS(100));
   
