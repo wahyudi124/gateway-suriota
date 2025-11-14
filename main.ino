@@ -29,7 +29,7 @@
 
 // Button and LED pins
 #define CONFIG_BUTTON_PIN 0
-#define STATUS_LED_PIN 7
+#define STATUS_LED_PIN 8
 
 // Button state variables
 volatile unsigned long buttonPressTime = 0;
