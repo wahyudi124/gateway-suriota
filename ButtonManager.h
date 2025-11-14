@@ -1,20 +1,27 @@
 #ifndef BUTTON_MANAGER_H
 #define BUTTON_MANAGER_H
 
-#include <OneButton.h>
+#include <Arduino.h>
 
 #define PIN_BUTTON 0
 #define PIN_LED_STATUS 7
 
 class ButtonManager {
 private:
-  OneButton button;
   bool configMode;
   bool bleActive;
   unsigned long longPressStart;
   int clickCount;
   unsigned long lastClickTime;
   TaskHandle_t ledTaskHandle;
+  bool buttonInitialized;
+  bool _longclick;
+  bool _singleclick;
+  
+  // Native button handling
+  int lastButtonState;
+  int buttonState;
+  unsigned long lastDebounceTime;
   
   static void ledBlinkTask(void* parameter);
   static void delayedButtonInit(void* parameter);
@@ -23,9 +30,7 @@ private:
   void setLedSolid(bool on);
   void initButton();
   
-  static void handleClick();
-  static void handleLongPressStart();
-  static void handleLongPressStop();
+
   
   static ButtonManager* instance;
   
