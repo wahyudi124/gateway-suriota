@@ -177,7 +177,7 @@ void setup() {
   configManager->debugDevicesFile();
 
     // Force clear all cache and reload
-  configManager->clearAllConfigurations();
+  // configManager->clearAllConfigurations();
   
   // Create test device if no valid devices exist
 

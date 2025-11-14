@@ -21,10 +21,24 @@ bool SDLogger::begin() {
 }
 
 bool SDLogger::initSD() {
-  SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  Serial.printf("[SD] Initializing SD Card (CS:%d, MOSI:%d, MISO:%d, SCK:%d)\n", 
+                SD_CS, SD_MOSI, SD_MISO, SD_SCK);
   
-  if (!SD.begin(SD_CS)) {
-    Serial.println("SD Card Mount Failed");
+  SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  delay(100);
+  
+  // Try multiple times
+  for (int i = 0; i < 3; i++) {
+    if (SD.begin(SD_CS, SPI, 4000000)) {
+      Serial.println("[SD] Card mounted successfully");
+      break;
+    }
+    Serial.printf("[SD] Mount attempt %d failed\n", i + 1);
+    delay(500);
+  }
+  
+  if (!SD.begin(SD_CS, SPI, 4000000)) {
+    Serial.println("[SD] Card Mount Failed after retries");
     return false;
   }
   
