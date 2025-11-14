@@ -75,9 +75,9 @@ String SDLogger::getLogFileName() {
   if (rtcManager) {
     DateTime now = rtcManager->getCurrentTime();
     return String("/logs/") + String(now.year()) + "-" + 
-           String(now.month()) + "-" + String(now.day()) + ".log";
+           String(now.month()) + "-" + String(now.day()) + ".csv";
   }
-  return "/logs/data.log";
+  return "/logs/data.csv";
 }
 
 String SDLogger::formatLogEntry(const String& registerName, const String& value) {
@@ -88,7 +88,7 @@ String SDLogger::formatLogEntry(const String& registerName, const String& value)
   } else {
     timestamp = String(millis());
   }
-  return timestamp + "|" + registerName + "|" + value;
+  return timestamp + "," + registerName + "," + value;
 }
 
 void SDLogger::flushBatch() {
@@ -100,8 +100,12 @@ void SDLogger::flushBatch() {
     SD.mkdir("/logs");
   }
   
+  bool fileExists = SD.exists(filename);
   File logFile = SD.open(filename, FILE_APPEND);
   if (logFile) {
+    if (!fileExists) {
+      logFile.println("Timestamp,RegisterName,Value");
+    }
     logFile.print(batchBuffer);
     logFile.close();
     Serial.printf("Logged %d entries to SD\n", batchCount);
