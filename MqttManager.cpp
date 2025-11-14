@@ -1,5 +1,7 @@
 #include "MqttManager.h"
 
+#define NET_LED_PIN 7
+
 MqttManager* MqttManager::instance = nullptr;
 
 MqttManager::MqttManager(ConfigManager* config, ServerConfig* serverCfg, NetworkMgr* netMgr) 
@@ -231,6 +233,11 @@ void MqttManager::publishQueueData() {
     
     if (mqttClient.publish(topic.c_str(), payload.c_str())) {
       Serial.printf("[MQTT] Published: %s\n", topic.c_str());
+      
+      // Blink LED on success
+      digitalWrite(NET_LED_PIN, HIGH);
+      vTaskDelay(pdMS_TO_TICKS(100));
+      digitalWrite(NET_LED_PIN, LOW);
     } else {
       Serial.printf("[MQTT] Publish failed: %s\n", topic.c_str());
       queueManager->enqueue(dataPoint);

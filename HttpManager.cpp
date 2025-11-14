@@ -1,5 +1,7 @@
 #include "HttpManager.h"
 
+#define NET_LED_PIN 7
+
 HttpManager* HttpManager::instance = nullptr;
 
 HttpManager::HttpManager(ConfigManager* config, ServerConfig* serverCfg, NetworkMgr* netMgr) 
@@ -159,6 +161,12 @@ bool HttpManager::sendHttpRequest(const JsonObject& data) {
       if (httpResponseCode >= 200 && httpResponseCode < 300) {
         String response = httpClient.getString();
         Serial.printf("[HTTP] Success: %s\n", response.c_str());
+        
+        // Blink LED on success
+        digitalWrite(NET_LED_PIN, HIGH);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        digitalWrite(NET_LED_PIN, LOW);
+        
         httpClient.end();
         return true;
       } else {
