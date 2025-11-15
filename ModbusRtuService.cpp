@@ -22,10 +22,12 @@ bool ModbusRtuService::init() {
   // Initialize Serial1 for Bus 1
   serial1 = new HardwareSerial(1);
   serial1->begin(9600, SERIAL_8N1, RTU_RX1, RTU_TX1);
+  serial1->setRxBufferSize(256);
   
   // Initialize Serial2 for Bus 2
   serial2 = new HardwareSerial(2);
   serial2->begin(9600, SERIAL_8N1, RTU_RX2, RTU_TX2);
+  serial2->setRxBufferSize(256);
   
   // Initialize ModbusMaster instances
   modbus1 = new ModbusMaster();
@@ -138,7 +140,7 @@ void ModbusRtuService::readRtuDevicesLoop() {
       }
     }
     
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
 }
 
@@ -157,87 +159,119 @@ void ModbusRtuService::readRtuDeviceData(const JsonObject& deviceConfig) {
     return;
   }
   
-  // Set slave ID for this device
-  Serial.printf("[RTU] Setting slave ID to %d for device %s\n", slaveId, deviceId.c_str());
+  // Set slave ID and configure baud rate for this device
+  int baudRate = deviceConfig["baud_rate"] | 9600;
+  Serial.printf("[RTU] Configuring Bus %d: SlaveID=%d, Baud=%d for device %s\n", 
+                serialPort, slaveId, baudRate, deviceId.c_str());
+  
   if (serialPort == 1) {
+    serial1->updateBaudRate(baudRate);
+    serial1->flush();
+    vTaskDelay(pdMS_TO_TICKS(50));
     modbus1->begin(slaveId, *serial1);
   } else if (serialPort == 2) {
+    serial2->updateBaudRate(baudRate);
+    serial2->flush();
+    vTaskDelay(pdMS_TO_TICKS(50));
     modbus2->begin(slaveId, *serial2);
   }
   
-  // Try batch reading for consecutive registers
+  // Sort registers by address for better batching
+  struct RegInfo {
+    int index;
+    uint16_t address;
+    uint8_t functionCode;
+    int regSize;
+  };
+  
+  RegInfo regInfos[registers.size()];
   bool processedRegisters[registers.size()];
+  
   for (int i = 0; i < registers.size(); i++) {
     processedRegisters[i] = false;
+    JsonObject reg = registers[i].as<JsonObject>();
+    regInfos[i].index = i;
+    regInfos[i].address = reg["address"] | 0;
+    regInfos[i].functionCode = reg["function_code"] | 3;
+    
+    String dataType = reg["data_type"] | "int16";
+    if (dataType.startsWith("INT32") || dataType.startsWith("UINT32") || dataType.startsWith("FLOAT32")) {
+      regInfos[i].regSize = 2;
+    } else if (dataType.startsWith("INT64") || dataType.startsWith("UINT64") || dataType.startsWith("DOUBLE64")) {
+      regInfos[i].regSize = 4;
+    } else {
+      regInfos[i].regSize = 1;
+    }
+  }
+  
+  // Simple bubble sort by address
+  for (int i = 0; i < registers.size() - 1; i++) {
+    for (int j = 0; j < registers.size() - i - 1; j++) {
+      if (regInfos[j].address > regInfos[j + 1].address) {
+        RegInfo temp = regInfos[j];
+        regInfos[j] = regInfos[j + 1];
+        regInfos[j + 1] = temp;
+      }
+    }
   }
   
   for (int i = 0; i < registers.size(); i++) {
-    if (!running || processedRegisters[i]) continue;
+    if (!running || processedRegisters[regInfos[i].index]) continue;
     
-    JsonObject reg = registers[i].as<JsonObject>();
-    uint8_t functionCode = reg["function_code"] | 3;
-    uint16_t startAddress = reg["address"] | 0;
-    String dataType = reg["data_type"] | "int16";
-    
-    // Calculate how many registers this data type needs
-    int regSize = 1;
-    if (dataType.startsWith("INT32") || dataType.startsWith("UINT32") || dataType.startsWith("FLOAT32")) {
-      regSize = 2;
-    } else if (dataType.startsWith("INT64") || dataType.startsWith("UINT64") || dataType.startsWith("DOUBLE64")) {
-      regSize = 4;
-    }
-    
-    // Find consecutive registers that can be read together
-    int totalRegisters = regSize;
+    uint8_t functionCode = regInfos[i].functionCode;
+    uint16_t startAddress = regInfos[i].address;
+    int totalRegisters = regInfos[i].regSize;
     int batchCount = 1;
     
-    // Look for more registers that can be batched
+    // Find consecutive registers for batching
     for (int j = i + 1; j < registers.size(); j++) {
-      if (processedRegisters[j]) continue;
+      if (processedRegisters[regInfos[j].index]) continue;
       
-      JsonObject nextReg = registers[j].as<JsonObject>();
-      uint8_t nextFunctionCode = nextReg["function_code"] | 3;
-      uint16_t nextAddress = nextReg["address"] | 0;
-      String nextDataType = nextReg["data_type"] | "int16";
-      
-      int nextRegSize = 1;
-      if (nextDataType.startsWith("INT32") || nextDataType.startsWith("UINT32") || nextDataType.startsWith("FLOAT32")) {
-        nextRegSize = 2;
-      } else if (nextDataType.startsWith("INT64") || nextDataType.startsWith("UINT64") || nextDataType.startsWith("DOUBLE64")) {
-        nextRegSize = 4;
-      }
-      
-      // Check if this register is consecutive and same function code
-      if (nextFunctionCode == functionCode && nextAddress == (startAddress + totalRegisters)) {
-        totalRegisters += nextRegSize;
+      // Check if consecutive and same function code
+      if (regInfos[j].functionCode == functionCode && 
+          regInfos[j].address == (startAddress + totalRegisters) &&
+          (totalRegisters + regInfos[j].regSize) <= 50) {
+        totalRegisters += regInfos[j].regSize;
         batchCount++;
-        if (totalRegisters > 50) break; // Increased batch size for large systems
+      } else {
+        break; // Not consecutive, stop batching
       }
     }
     
-    Serial.printf("[BATCH] Reading %d registers starting from %d (batch of %d register configs)\n", 
-                  totalRegisters, startAddress, batchCount);
+    if (totalRegisters > 50) {
+      Serial.printf("[BATCH] Warning: batch size %d exceeds limit, capping at 50\n", totalRegisters);
+      totalRegisters = 50;
+    }
+    
+    Serial.printf("[BATCH] Reading %d registers from addr %d (FC:%d, %d configs)\n", 
+                  totalRegisters, startAddress, functionCode, batchCount);
     
     // Read the batch
-    uint16_t values[100]; // Max 100 registers per batch for large systems
+    uint16_t values[50];
     if (readMultipleRegisters(modbus, functionCode, startAddress, totalRegisters, values)) {
       // Process each register in the batch
       int valueIndex = 0;
       for (int k = i; k < registers.size() && valueIndex < totalRegisters; k++) {
-        if (processedRegisters[k]) continue;
+        int regIdx = regInfos[k].index;
+        if (processedRegisters[regIdx]) continue;
         
-        JsonObject batchReg = registers[k].as<JsonObject>();
+        JsonObject batchReg = registers[regIdx].as<JsonObject>();
         uint16_t batchAddress = batchReg["address"] | 0;
         
         // Check if this register is in our current batch
         if (batchAddress >= startAddress && batchAddress < (startAddress + totalRegisters)) {
-          processedRegisters[k] = true;
+          processedRegisters[regIdx] = true;
           
           String batchDataType = batchReg["data_type"] | "int16";
           String batchRegisterName = batchReg["register_name"] | "Unknown";
           
           // Calculate offset in the batch
           int offset = batchAddress - startAddress;
+          
+          if (offset < 0 || offset >= totalRegisters) {
+            Serial.printf("[BATCH] Error: offset %d out of range [0-%d]\n", offset, totalRegisters - 1);
+            continue;
+          }
           
           // Process based on data type
           if (batchDataType.startsWith("INT32") || batchDataType.startsWith("UINT32") || batchDataType.startsWith("FLOAT32")) {
@@ -289,7 +323,7 @@ void ModbusRtuService::readRtuDeviceData(const JsonObject& deviceConfig) {
               }
               valueIndex += 2;
             }
-          } else {
+          } else if (offset < totalRegisters) {
             // Single register types
             float value = processRegisterValue(batchReg, values[offset]);
             storeRegisterValue(deviceId, batchReg, value);
@@ -307,9 +341,15 @@ void ModbusRtuService::readRtuDeviceData(const JsonObject& deviceConfig) {
           }
         }
       }
+    } else {
+      Serial.printf("[BATCH] Failed to read batch at addr %d\n", startAddress);
+      // Mark as processed to avoid infinite retry
+      for (int k = i; k < i + batchCount && k < registers.size(); k++) {
+        processedRegisters[regInfos[k].index] = true;
+      }
     }
     
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
   
   // Process any remaining non-batched registers (fallback)
@@ -551,19 +591,34 @@ void ModbusRtuService::storeRegisterValue(const String& deviceId, const JsonObje
 }
 
 bool ModbusRtuService::readMultipleRegisters(ModbusMaster* modbus, uint8_t functionCode, uint16_t address, int count, uint16_t* values) {
+  const int MAX_RETRIES = 3;
   uint8_t result;
-  if (functionCode == 3) {
-    result = modbus->readHoldingRegisters(address, count);
-  } else {
-    result = modbus->readInputRegisters(address, count);
+  
+  for (int retry = 0; retry < MAX_RETRIES; retry++) {
+    if (functionCode == 3) {
+      result = modbus->readHoldingRegisters(address, count);
+    } else {
+      result = modbus->readInputRegisters(address, count);
+    }
+    
+    if (result == modbus->ku8MBSuccess) {
+      for (int i = 0; i < count; i++) {
+        values[i] = modbus->getResponseBuffer(i);
+      }
+      if (retry > 0) {
+        Serial.printf("[RTU] Success on retry %d\n", retry + 1);
+      }
+      return true;
+    }
+    
+    if (retry < MAX_RETRIES - 1) {
+      Serial.printf("[RTU] Read failed (error: 0x%02X), retry %d/%d\n", result, retry + 1, MAX_RETRIES);
+      vTaskDelay(pdMS_TO_TICKS(100));
+    }
   }
   
-  if (result == modbus->ku8MBSuccess) {
-    for (int i = 0; i < count; i++) {
-      values[i] = modbus->getResponseBuffer(i);
-    }
-    return true;
-  }
+  Serial.printf("[RTU] Read failed after %d retries (FC:%d, Addr:%d, Count:%d)\n", 
+                MAX_RETRIES, functionCode, address, count);
   return false;
 }
 
