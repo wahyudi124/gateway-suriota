@@ -8,19 +8,19 @@ const char* ConfigManager::REGISTERS_FILE = "/registers.json";
 
 ConfigManager::ConfigManager() : devicesCache(nullptr), registersCache(nullptr), 
                                  devicesCacheValid(false), registersCacheValid(false) {
-  // Initialize cache in PSRAM
+  // Initialize cache in PSRAM with larger buffers
   devicesCache = (DynamicJsonDocument*)heap_caps_malloc(sizeof(DynamicJsonDocument), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (devicesCache) {
-    new(devicesCache) DynamicJsonDocument(8192);
+    new(devicesCache) DynamicJsonDocument(65536); // 64KB for many registers
   } else {
-    devicesCache = new DynamicJsonDocument(4096);
+    devicesCache = new DynamicJsonDocument(32768); // 32KB fallback
   }
   
   registersCache = (DynamicJsonDocument*)heap_caps_malloc(sizeof(DynamicJsonDocument), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (registersCache) {
-    new(registersCache) DynamicJsonDocument(16384);
+    new(registersCache) DynamicJsonDocument(65536); // 64KB for many registers
   } else {
-    registersCache = new DynamicJsonDocument(8192);
+    registersCache = new DynamicJsonDocument(32768); // 32KB fallback
   }
 }
 
@@ -375,10 +375,26 @@ bool ConfigManager::listRegisters(const String& deviceId, JsonArray& registers) 
     JsonObject device = (*devicesCache)[deviceId];
     if (device.containsKey("registers")) {
       JsonArray deviceRegisters = device["registers"];
-      Serial.printf("Device %s has %d registers in cache\n", deviceId.c_str(), deviceRegisters.size());
+      int totalRegs = deviceRegisters.size();
+      Serial.printf("[LIST_REGISTERS] Device %s has %d registers in cache\n", deviceId.c_str(), totalRegs);
+      
+      int copied = 0;
       for (JsonVariant reg : deviceRegisters) {
-        registers.add(reg);
+        JsonObject regObj = reg.as<JsonObject>();
+        
+        // Deep copy each register to avoid reference issues
+        JsonObject newReg = registers.createNestedObject();
+        for (JsonPair kv : regObj) {
+          newReg[kv.key()] = kv.value();
+        }
+        copied++;
+        
+        if (copied % 5 == 0) {
+          Serial.printf("[LIST_REGISTERS] Copied %d/%d registers\n", copied, totalRegs);
+        }
       }
+      
+      Serial.printf("[LIST_REGISTERS] Successfully copied all %d registers\n", copied);
       return true;
     } else {
       Serial.printf("Device %s has no registers array\n", deviceId.c_str());
@@ -399,14 +415,23 @@ bool ConfigManager::getRegistersSummary(const String& deviceId, JsonArray& summa
     JsonObject device = (*devicesCache)[deviceId];
     if (device.containsKey("registers")) {
       JsonArray registers = device["registers"];
+      int totalRegs = registers.size();
+      Serial.printf("[SUMMARY] Processing %d registers\n", totalRegs);
+      
+      int processed = 0;
       for (JsonVariant reg : registers) {
+        JsonObject regObj = reg.as<JsonObject>();
         JsonObject regSummary = summary.createNestedObject();
-        regSummary["register_id"] = reg["register_id"];
-        regSummary["register_name"] = reg["register_name"];
-        regSummary["address"] = reg["address"];
-        regSummary["data_type"] = reg["data_type"];
-        regSummary["description"] = reg["description"];
+        
+        regSummary["register_id"] = regObj["register_id"];
+        regSummary["register_name"] = regObj["register_name"];
+        regSummary["address"] = regObj["address"];
+        regSummary["data_type"] = regObj["data_type"];
+        regSummary["description"] = regObj["description"];
+        processed++;
       }
+      
+      Serial.printf("[SUMMARY] Processed %d/%d registers\n", processed, totalRegs);
       return true;
     }
   }
